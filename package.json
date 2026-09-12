@@ -1,0 +1,40 @@
+{
+  "name": "code-practice-daily",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A tutor-controlled daily programming apprenticeship system",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @cpd/api",
+    "dev:executor": "npm run dev -w @cpd/executor",
+    "dev:worker": "npm run dev -w @cpd/worker",
+    "dev:web": "npm run dev -w @cpd/web",
+    "build": "npm run build -w @cpd/core -w @cpd/curriculum -w @cpd/executor -w @cpd/api -w @cpd/worker",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/ai && tsc --noEmit -p apps/executor && tsc --noEmit -p apps/api && tsc --noEmit -p apps/worker && tsc --noEmit -p apps/web",
+    "test": "vitest run",
+    "test:unit": "vitest run packages/core/tests apps/api/tests/unit",
+    "test:integration": "vitest run apps/api/tests/integration",
+    "test:e2e": "vitest run tests/e2e",
+    "db:generate": "drizzle-kit generate --config packages/core/drizzle.config.ts",
+    "db:migrate": "tsx packages/core/scripts/migrate.ts",
+    "db:seed": "tsx packages/core/scripts/seed.ts",
+    "db:reset": "tsx packages/core/scripts/reset.ts"
+  },
+  "devDependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@types/luxon": "^3.7.4",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.21.0",
+    "drizzle-kit": "^0.30.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786622909345,
+      "tag": "0000_fine_expediter",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789177827177,
+      "tag": "0001_goals",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789196059376,
+      "tag": "0002_fancy_the_twelve",
+      "breakpoints": true
+    }
+  ]
+}

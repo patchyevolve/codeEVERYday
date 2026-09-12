@@ -1,0 +1,163 @@
+# docker-compose.yml — local development stack
+# Usage:
+#   cp .env.example .env          # create your .env (or use .env.docker defaults)
+#   docker compose up             # start everything (runc sandbox)
+#   docker compose --profile gvisor up  # start with gVisor sandbox (requires runsc)
+#   docker compose up -d          # start in background
+#   docker compose logs -f api    # follow API logs
+#   docker compose down -v        # stop and remove volumes
+#
+# gVisor setup (optional):
+#   1. Install runsc: https://gvisor.dev/docs/user_guide/install/
+#   2. Add to /etc/docker/daemon.json: { "runtimes": { "runsc": { "path": "/usr/local/bin/runsc" } } }
+#   3. Run: docker compose --profile gvisor up
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5433:5432"              # host 5433 -> container 5432 (matches DATABASE_URL)
+    environment:
+      POSTGRES_USER: cpd
+      POSTGRES_PASSWORD: cpd
+      POSTGRES_DB: cpd
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpd -d cpd"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── API Server ──────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://cpd:cpd@postgres:5432/cpd
+      API_PORT: "4000"
+      API_HOST: "0.0.0.0"
+      API_SESSION_SECRET: "local-dev-secret-change-in-production"
+      SESSION_TTL_DAYS: "30"
+      COOKIE_SECURE: "false"
+      TRUST_PROXY: "false"
+      CORS_ORIGIN: "http://localhost:5173"
+      EXECUTOR_URL: http://executor:4100
+      LOG_LEVEL: info
+
+  # ── Executor — default (runc) ──────────────────────────────
+  executor:
+    build:
+      context: .
+      target: executor
+    restart: unless-stopped
+    ports:
+      - "4100:4100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      EXECUTOR_PORT: "4100"
+      EXECUTOR_USE_DOCKER: "true"
+      EXECUTOR_DOCKER_RUNTIME: ""            # empty = default runc
+      EXECUTOR_DEFAULT_TIMEOUT_MS: "5000"
+      EXECUTOR_MAX_TIMEOUT_MS: "30000"
+      EXECUTOR_DEFAULT_MEMORY_MB: "256"
+      LOG_LEVEL: info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # ── Worker (background jobs + scheduled tasks) ─────────────
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://cpd:cpd@postgres:5432/cpd
+      WORKER_POLL_INTERVAL_MS: "5000"
+      REMINDER_SWEEP_INTERVAL_MIN: "5"
+      DAILY_GENERATION_HOUR: "0"
+      MISSED_PROCESSING_INTERVAL_MIN: "15"
+      DECAY_SWEEP_INTERVAL_MIN: "60"
+      NOTIFICATION_MAX_PER_DAY: "12"
+      NOTIFICATION_MAX_REMINDERS_PER_DAY: "6"
+      LOG_LEVEL: info
+
+  # ── Executor — gVisor profile ───────────────────────────────
+  # Activated via: docker compose --profile gvisor up
+  # Requires runsc installed on host and registered in /etc/docker/daemon.json
+  executor-gvisor:
+    profiles: ["gvisor"]
+    build:
+      context: .
+      target: executor
+    restart: unless-stopped
+    ports:
+      - "4100:4100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      EXECUTOR_PORT: "4100"
+      EXECUTOR_USE_DOCKER: "true"
+      EXECUTOR_DOCKER_RUNTIME: "runsc"       # gVisor user-space kernel
+      EXECUTOR_DEFAULT_TIMEOUT_MS: "5000"
+      EXECUTOR_MAX_TIMEOUT_MS: "30000"
+      EXECUTOR_DEFAULT_MEMORY_MB: "256"
+      LOG_LEVEL: info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # ── Web (Vite dev server) ───────────────────────────────────
+  web:
+    build:
+      context: .
+      target: base
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      NODE_ENV: development
+    command: ["npm", "run", "dev", "-w", "@cpd/web"]
+
+  # ── DB Init (run migrations + seed once) ────────────────────
+  db-init:
+    build:
+      context: .
+      target: base
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://cpd:cpd@postgres:5432/cpd
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo "Running migrations..."
+        npm run db:migrate
+        echo "Seeding database..."
+        npm run db:seed
+        echo "Done."
+
+volumes:
+  pgdata:

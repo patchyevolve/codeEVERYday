@@ -1,0 +1,20 @@
+{
+  "name": "@cpd/curriculum",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cpd/ai": "*",
+    "@cpd/core": "*",
+    "zod": "^3.24.0"
+  }
+}

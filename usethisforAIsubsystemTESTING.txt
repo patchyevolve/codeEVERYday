@@ -1,0 +1,1253 @@
+AI SUBSYSTEM VERIFICATION AND ACCEPTANCE SPECIFICATION
+
+You are implementing a production-grade AI tutoring subsystem.
+
+You must not declare the AI subsystem "working", "complete", "correct", or
+"production-ready" merely because:
+
+- the application starts
+- TypeScript/build checks pass
+- unit tests pass
+- an AI provider returns a response
+- the tutor can answer a chat message
+- database tables exist
+- a single happy-path session works
+
+The system is correct only when its actual behavior has been demonstrated
+through automated verification.
+
+Your responsibility is not only to implement the subsystem, but also to
+build the verification infrastructure necessary to prove that the subsystem
+behaves according to its specification.
+
+============================================================
+1. VERIFICATION PHILOSOPHY
+============================================================
+
+Treat verification as part of the architecture, not as an afterthought.
+
+There are five separate things that must be verified:
+
+1. COMPONENT CORRECTNESS
+   Individual components work according to their contracts.
+
+2. INTEGRATION CORRECTNESS
+   Components communicate correctly and preserve state correctly.
+
+3. FAILURE CORRECTNESS
+   Provider failures, quota exhaustion, malformed AI responses, timeouts,
+   unavailable models, database failures, and other failures are handled
+   without corrupting tutoring state.
+
+4. BEHAVIORAL CORRECTNESS
+   The tutor actually behaves according to the intended tutoring model.
+
+5. LONGITUDINAL CORRECTNESS
+   The tutor maintains correct learner/curriculum/session/memory state
+   across multiple sessions and can use previous information correctly.
+
+Passing level 1 does not imply levels 2-5.
+
+============================================================
+2. REQUIRED VERIFICATION LAYERS
+============================================================
+
+Implement all of the following:
+
+A. UNIT TESTS
+B. CONTRACT TESTS
+C. INTEGRATION TESTS
+D. PROVIDER FAILURE TESTS
+E. CONTENT PIPELINE TESTS
+F. MEMORY TESTS
+G. CURRICULUM TESTS
+H. TUTOR BEHAVIOR SCENARIO TESTS
+I. MULTI-SESSION END-TO-END TESTS
+J. REAL-MODEL EVALUATION TESTS
+K. REGRESSION TESTS
+L. SYSTEM INVARIANT CHECKS
+
+Each layer must have a clear purpose.
+
+============================================================
+3. UNIT TESTS
+============================================================
+
+Test deterministic logic without an actual LLM.
+
+At minimum test:
+
+- provider selection
+- model capability matching
+- quota accounting
+- quota reservation
+- quota release
+- rate-limit state
+- retry policy
+- fallback policy
+- circuit breaker
+- request prioritization
+- content state transitions
+- content versioning
+- learner-state updates
+- evidence aggregation
+- hypothesis state transitions
+- session state transitions
+- curriculum transitions
+- memory persistence
+- historical retrieval
+- temporal date resolution
+- decision recording
+- session report generation
+
+Tests must verify both successful and failure cases.
+
+============================================================
+4. CONTRACT TESTS
+============================================================
+
+Every major AI subsystem component must have an explicit input/output
+contract.
+
+Examples:
+
+Provider Gateway:
+    AIRequest -> AIResponse
+
+Tutor Engine:
+    TutorContext -> TutorDecision
+
+Evidence Engine:
+    RawEvent -> EvidenceEvent
+
+Hypothesis Engine:
+    EvidenceSet -> HypothesisSet
+
+Session Planner:
+    LearnerState + CurriculumState + PreviousSession
+    -> SessionPlan
+
+Session Reporter:
+    SessionState -> SessionReport
+
+Memory Retrieval:
+    MemoryQuery -> MemoryResults
+
+Content Generator:
+    ContentRequirement -> GeneratedContent
+
+Content Reviewer:
+    GeneratedContent + Requirement -> ReviewResult
+
+Use structured outputs.
+
+Do not make application logic parse arbitrary LLM prose to determine
+important state transitions.
+
+============================================================
+5. AI PROVIDER TESTING
+============================================================
+
+Create fake/mock providers.
+
+Tests must simulate:
+
+- success
+- timeout
+- HTTP 429
+- daily quota exhausted
+- token quota exhausted
+- HTTP 500
+- malformed response
+- invalid structured output
+- unavailable model
+- invalid credentials
+- network failure
+- provider returning unexpected content
+
+Verify that each failure follows the intended policy.
+
+For example:
+
+RATE_LIMIT:
+    retry with bounded exponential backoff
+
+DAILY_QUOTA_EXHAUSTED:
+    do not repeatedly retry
+    mark provider/model unavailable until reset
+    route to another suitable provider
+
+INVALID_CREDENTIALS:
+    do not continuously retry
+    mark provider unhealthy
+
+MALFORMED_MODEL_OUTPUT:
+    validate
+    attempt bounded repair if appropriate
+    otherwise fail safely
+
+============================================================
+6. PROVIDER FALLBACK TEST
+============================================================
+
+Create a test with:
+
+Provider A:
+    healthy initially
+
+Provider B:
+    healthy
+
+Perform request:
+    -> A succeeds
+
+Then make A unavailable.
+
+Perform request:
+    -> B must be selected
+
+Verify:
+
+- same semantic task is preserved
+- required capabilities are preserved
+- context is preserved
+- result is recorded
+- usage is recorded against B
+- A is marked appropriately
+- no duplicated learner action occurs
+
+============================================================
+7. QUOTA TESTING
+============================================================
+
+Test concurrent requests.
+
+Example:
+
+    many background content-generation jobs
+    +
+    one active learner tutor request
+
+The active tutor request must retain higher priority.
+
+Background work must not consume the capacity reserved for live tutoring.
+
+Also test concurrent reservation of the final available quota.
+
+Only one request may successfully reserve the same quota capacity.
+
+Quota accounting must be atomic.
+
+============================================================
+8. CONTENT PIPELINE TESTING
+============================================================
+
+Test the complete content lifecycle:
+
+    requirement
+    -> retrieve existing content
+    -> if suitable, reuse
+    -> otherwise generate
+    -> schema validation
+    -> deterministic validation
+    -> AI review
+    -> bounded repair
+    -> revalidation
+    -> approval
+    -> persistence
+    -> availability to tutor
+
+Never allow generated content to become approved merely because generation
+succeeded.
+
+============================================================
+9. CONTENT VALIDATION TESTS
+============================================================
+
+For coding exercises:
+
+- compile scaffold
+- compile reference solution
+- run every test case
+- verify expected output
+- test edge cases
+- reject broken reference solutions
+- reject invalid harnesses
+- reject malformed exercises
+
+For structured educational content:
+
+- validate schema
+- validate required fields
+- validate concept references
+- validate prerequisites
+- validate difficulty
+- validate learning objectives
+- validate internal consistency
+
+AI review cannot override deterministic failures.
+
+Example:
+
+If a reference solution does not compile:
+
+    content status MUST NOT become APPROVED
+
+even if an AI reviewer says it looks correct.
+
+============================================================
+10. MEMORY TESTING
+============================================================
+
+Verify that the following remain separate:
+
+FACTUAL SESSION MEMORY
+LEARNER MEMORY
+HISTORICAL MEMORY
+TUTOR EXPERIENCE MEMORY
+TEMPORARY SESSION CONTEXT
+
+Test that a new learner state does not overwrite historical session facts.
+
+Example:
+
+Session A:
+    learner struggled with references
+
+Session B:
+    learner mastered references
+
+Historical query:
+    "What happened during Session A?"
+
+Expected:
+    Session A still reports the original struggle.
+
+Current learner query:
+    "What do I currently understand?"
+
+Expected:
+    current state reflects later improvement.
+
+============================================================
+11. TEMPORAL MEMORY TESTING
+============================================================
+
+Test queries such as:
+
+- what did we do yesterday?
+- what did we do on Monday?
+- when did we learn pointers?
+- what was I struggling with last week?
+- what did we plan to do today?
+- did we already learn this?
+
+The system must retrieve actual stored records.
+
+The LLM must not invent historical information.
+
+============================================================
+12. CURRICULUM CONTINUITY TESTING
+============================================================
+
+Test:
+
+Session 1:
+    planned concept A
+    concept A partially completed
+
+Session 2:
+    tutor must recognize unfinished work
+
+Session 3:
+    tutor must use the accumulated state
+
+Verify that curriculum progression is based on actual learner state and
+curriculum dependencies rather than simply advancing one item per day.
+
+Also verify that one failed exercise does not automatically cause excessive
+remediation.
+
+============================================================
+13. TUTOR BEHAVIOR TESTING
+============================================================
+
+This is mandatory.
+
+Do not test the tutor only by checking whether it generated text.
+
+Create behavioral scenarios.
+
+Each scenario must define:
+
+    initial state
+    observed evidence
+    possible interpretations
+    learner response
+    expected tutor behavior
+    expected state changes
+    prohibited behavior
+
+Evaluate structured tutor decisions rather than exact natural-language
+wording.
+
+============================================================
+14. SCENARIO: ENVIRONMENTAL PROBLEM
+============================================================
+
+Initial observation:
+
+    learner repeatedly omits commas/semicolons.
+
+Possible explanations:
+
+    syntax weakness
+    typing problem
+    editor problem
+    rushing
+
+The tutor must not immediately conclude:
+
+    learner has a syntax weakness
+
+Expected:
+
+    tutor identifies uncertainty
+    tutor asks an appropriate clarification question
+
+Learner says:
+
+    "My comma key doesn't work properly sometimes."
+
+Expected:
+
+    temporary environmental context is recorded
+    syntax-weakness hypothesis is weakened or prevented from being
+    incorrectly strengthened
+    punctuation errors are not treated as strong evidence of conceptual
+    weakness
+    tutor can continue teaching normally
+
+The tutor must not continue from its original assumption as though the
+learner never provided the clarification.
+
+============================================================
+15. SCENARIO: LEARNER CORRECTS THE TUTOR
+============================================================
+
+Tutor says:
+
+    "It looks like you don't understand references."
+
+Learner says:
+
+    "I understand references. I don't understand why this function
+     takes a const reference."
+
+Expected:
+
+    tutor recognizes that its previous interpretation may have been too broad
+    tutor updates the active hypothesis
+    tutor narrows the problem to const-reference semantics
+    tutor does not defensively repeat the original diagnosis
+
+============================================================
+16. SCENARIO: AMBIGUOUS "I DON'T UNDERSTAND"
+============================================================
+
+Learner:
+
+    "I don't understand."
+
+The tutor must not immediately assume the exact cause.
+
+Expected:
+
+    clarification question
+
+The question should attempt to distinguish possibilities such as:
+
+    concept misunderstanding
+    implementation difficulty
+    terminology
+    prerequisite weakness
+    problem interpretation
+
+============================================================
+17. SCENARIO: LEARNER CLAIMS MASTERY
+============================================================
+
+Learner:
+
+    "I already know recursion."
+
+The tutor must not blindly trust this.
+
+Expected:
+
+    small verification question or transfer task
+
+If learner succeeds:
+
+    reduce unnecessary teaching
+
+If learner fails:
+
+    identify the actual gap
+
+The system must not punish the learner for making the claim.
+
+============================================================
+18. SCENARIO: LEARNER CLAIMS CONFUSION
+============================================================
+
+Learner:
+
+    "I don't understand recursion."
+
+Tutor asks for clarification.
+
+Learner:
+
+    "I know what recursion means. I don't understand what happens
+     to previous function calls."
+
+Expected diagnosis:
+
+    call-stack / execution-model gap
+
+Expected teaching strategy:
+
+    tracing / stack-oriented explanation
+
+Do not give a generic recursion lecture if the learner has already
+demonstrated the basic concept.
+
+============================================================
+19. SCENARIO: ROOT-CAUSE REASONING
+============================================================
+
+Learner repeatedly fails several different topics.
+
+Example:
+
+    pointers
+    references
+    lifetime
+    RAII
+
+The tutor should be capable of considering a shared prerequisite such as
+the underlying C++ object/lifetime model.
+
+It must investigate rather than automatically teaching four unrelated
+topics independently.
+
+============================================================
+20. SCENARIO: INTERVENTION FAILURE
+============================================================
+
+Tutor hypothesis:
+
+    learner lacks a mental model
+
+Tutor intervention:
+
+    analogy
+
+Learner remains confused.
+
+Expected:
+
+    intervention marked ineffective for this situation
+    tutor changes strategy
+    tutor may try diagram, tracing, concrete example, etc.
+
+The tutor must not repeatedly apply a strategy after evidence indicates
+that it is ineffective.
+
+============================================================
+21. SCENARIO: TUTOR WAS WRONG
+============================================================
+
+Initial evidence:
+
+    learner fails recursion questions
+
+Tutor hypothesis:
+
+    weak recursion understanding
+
+Later evidence:
+
+    learner independently solves unfamiliar recursion problems
+    and explains recursion correctly.
+
+Expected:
+
+    original hypothesis is weakened/disproven
+    original decision remains in history
+    correction is recorded
+    current learner state reflects newer evidence
+    tutor experience records that the original interpretation was incorrect
+
+The system must not silently overwrite the original decision.
+
+============================================================
+22. SCENARIO: MULTIPLE SIGNALS
+============================================================
+
+Do not infer learner mastery from one signal.
+
+Test a learner who:
+
+    passes MCQs
+    requires many hints
+    struggles to explain
+    succeeds when shown the solution
+    fails transfer problems
+
+Expected:
+
+    learner is not classified as fully independent/mastered
+
+The learner model must represent different dimensions separately.
+
+============================================================
+23. SCENARIO: INDEPENDENCE
+============================================================
+
+Compare:
+
+Learner A:
+    solves with 3 hints
+
+Learner B:
+    solves independently
+
+Both may have the same final answer.
+
+Expected:
+
+    learner models are not identical
+
+The system must record hint dependency / independence separately from
+correctness.
+
+============================================================
+24. SCENARIO: RETENTION
+============================================================
+
+Teach a concept.
+
+Immediately:
+    learner succeeds.
+
+Several sessions later:
+    learner is tested again.
+
+Expected:
+
+    immediate performance and retained performance are tracked separately.
+
+Do not declare durable mastery based only on immediate success.
+
+============================================================
+25. SCENARIO: TRANSFER
+============================================================
+
+Teach a concept using one problem format.
+
+Later provide a problem with a different surface form but the same underlying
+concept.
+
+Expected:
+
+    tutor evaluates whether the learner can transfer the concept rather
+    than merely reproduce the memorized pattern.
+
+============================================================
+26. SESSION CONTINUITY E2E TEST
+============================================================
+
+Build a complete multi-session test.
+
+DAY 1:
+
+    create learner
+    assign curriculum
+    generate daily plan
+    start session
+    perform recall
+    teach concept
+    ask questions
+    learner struggles
+    tutor clarifies
+    learner provides context
+    tutor changes interpretation
+    tutor chooses intervention
+    learner practices
+    code executes
+    tutor evaluates result
+    session ends
+    report is persisted
+    learner model is updated
+    curriculum state is updated
+    tutor experience is updated
+
+DAY 2:
+
+    load previous session
+    generate next plan
+    start session
+    retrieve yesterday's information
+    ask learner for recall
+    evaluate recall
+    connect today's lesson to yesterday
+    continue curriculum
+    handle learner questions
+    persist new state
+
+DAY 3:
+
+    retrieve previous state again
+    verify that the historical record remains correct
+    verify that current learner state reflects all later evidence
+
+This test must run against a real test database, not only mocks.
+
+============================================================
+27. HISTORICAL QUESTION E2E TEST
+============================================================
+
+After multiple sessions:
+
+Learner asks:
+
+    "What did we do on August 5?"
+
+Expected:
+
+    system retrieves actual session
+
+Then asks:
+
+    "What was I struggling with?"
+
+Expected:
+
+    answer is based on actual evidence recorded that day.
+
+Then asks:
+
+    "Did I fix it?"
+
+Expected:
+
+    system checks later sessions and gives an answer based on later evidence.
+
+The model must not invent the answer.
+
+============================================================
+28. PROVIDER FAILURE DURING LIVE SESSION
+============================================================
+
+Start an active session.
+
+Use Provider A.
+
+Then simulate:
+
+    Provider A daily quota exhausted.
+
+Expected:
+
+    active tutor request is routed to Provider B
+    session state is preserved
+    learner does not lose progress
+    no duplicate tutor action occurs
+    provider usage is recorded correctly
+
+Then exhaust Provider B.
+
+Expected:
+
+    system degrades safely
+    approved/prepared content may be used
+    state is preserved
+    system does not fabricate a response claiming that an AI action occurred
+    when it did not
+
+============================================================
+29. DATABASE FAILURE TEST
+============================================================
+
+Simulate failure while saving:
+
+    learner response
+    tutor decision
+    session report
+
+Expected:
+
+    transaction boundaries prevent partially corrupted state
+
+Important events must either:
+
+    commit completely
+
+or:
+
+    fail safely and be recoverable
+
+Do not silently lose learner progress.
+
+============================================================
+30. CONTEXT COMPILER TESTING
+============================================================
+
+The tutor must not receive the entire learner history.
+
+Create a large fake history.
+
+Ask a question about a specific previous session.
+
+Verify that:
+
+    relevant history is selected
+    irrelevant history is excluded
+    current session state is included
+    current curriculum state is included
+    relevant learner state is included
+    context stays within configured token limits
+
+The ContextCompiler should be deterministic where possible.
+
+============================================================
+31. AI BEHAVIORAL EVALUATION
+============================================================
+
+Automated deterministic tests cannot fully prove the quality of an LLM.
+
+Create a separate real-model evaluation suite.
+
+The suite must run controlled scenarios against actual configured models.
+
+Evaluate structured properties such as:
+
+    did tutor ask clarification?
+    did tutor identify uncertainty?
+    did tutor consider alternative causes?
+    did tutor update state after learner clarification?
+    did tutor avoid unsupported diagnosis?
+    did tutor retrieve historical state?
+    did tutor choose an appropriate intervention?
+    did tutor avoid unnecessary remediation?
+    did tutor preserve curriculum continuity?
+
+Do NOT require exact natural-language responses.
+
+Evaluate behavior and structured decisions.
+
+============================================================
+32. REAL-MODEL EVALUATION MUST BE VERSIONED
+============================================================
+
+Record:
+
+    model
+    provider
+    model version if available
+    prompt version
+    tutor policy version
+    scenario version
+    evaluation date
+    result
+    structured decision
+    evaluator result
+
+This allows regression comparison between model/prompt changes.
+
+============================================================
+33. REGRESSION TESTS
+============================================================
+
+Every discovered tutor bug must become a permanent regression test.
+
+Example:
+
+BUG:
+    tutor interpreted keyboard failure as syntax weakness.
+
+Create:
+
+    scenario/environmental-input-vs-learning-error
+
+Once added, it must run in future CI.
+
+Do not rely on developer memory.
+
+The scenario suite becomes the behavioral specification of the tutor.
+
+============================================================
+34. SYSTEM INVARIANTS
+============================================================
+
+Implement invariant checks.
+
+Examples:
+
+INVARIANT 1:
+    historical session records are immutable.
+
+INVARIANT 2:
+    learner current state cannot rewrite historical facts.
+
+INVARIANT 3:
+    unapproved AI-generated content cannot be used as approved curriculum
+    content.
+
+INVARIANT 4:
+    a provider quota cannot be decremented twice for one reservation.
+
+INVARIANT 5:
+    background AI jobs cannot consume protected live-tutoring capacity.
+
+INVARIANT 6:
+    a failed provider request must not create a fake tutor action.
+
+INVARIANT 7:
+    tutor hypotheses are not facts.
+
+INVARIANT 8:
+    learner claims are evidence, not automatically verified facts.
+
+INVARIANT 9:
+    deterministic execution results cannot be overridden by an LLM opinion.
+
+INVARIANT 10:
+    tutor decisions can be traced back to evidence.
+
+INVARIANT 11:
+    session reports must be reproducible from session events.
+
+INVARIANT 12:
+    current curriculum position must be derivable from persisted curriculum
+    state and approved transitions.
+
+============================================================
+35. VERIFICATION COMMANDS
+============================================================
+
+Create clear commands.
+
+For example:
+
+    npm run ai:test
+        all deterministic tests
+
+    npm run ai:test:unit
+        unit tests
+
+    npm run ai:test:integration
+        integration tests
+
+    npm run ai:test:providers
+        provider/failure tests
+
+    npm run ai:test:content
+        content pipeline tests
+
+    npm run ai:test:tutor
+        tutor scenario tests
+
+    npm run ai:test:e2e
+        multi-session tests
+
+    npm run ai:eval
+        real-model behavioral evaluation
+
+    npm run ai:verify
+        complete verification suite
+
+Use whatever command system the existing project uses; do not blindly
+introduce npm if the repository uses another package manager.
+
+============================================================
+36. VERIFICATION REPORT
+============================================================
+
+The final verification command must produce a machine-readable and
+human-readable report.
+
+Example:
+
+    AI SUBSYSTEM VERIFICATION
+
+    Component Tests:
+        PASS
+
+    Contract Tests:
+        PASS
+
+    Provider Tests:
+        PASS
+
+    Quota/Rate Limit Tests:
+        PASS
+
+    Content Pipeline:
+        PASS
+
+    Memory:
+        PASS
+
+    Curriculum:
+        PASS
+
+    Tutor Behavioral Scenarios:
+        PASS
+
+    Multi-Session E2E:
+        PASS
+
+    Provider Failure E2E:
+        PASS
+
+    Real Model Evaluation:
+        PARTIAL
+
+    Unverified:
+        ...
+
+    Failed:
+        ...
+
+    Overall:
+        PARTIALLY_VERIFIED
+
+Do not output VERIFIED unless the required acceptance criteria are actually
+satisfied.
+
+============================================================
+37. ACCEPTANCE LEVELS
+============================================================
+
+Use these states:
+
+VERIFIED:
+    required deterministic tests pass
+    required integration tests pass
+    required behavioral scenarios pass
+    required end-to-end scenarios pass
+    no known critical invariant violations
+    real-model evaluation meets configured thresholds
+
+PARTIALLY_VERIFIED:
+    implementation works in tested areas
+    but one or more required verification layers are incomplete
+
+FAILED:
+    required behavior or invariants fail
+
+UNVERIFIED:
+    implementation exists but there is insufficient evidence to make a
+    correctness claim
+
+Do not use "COMPLETE" as a synonym for "code exists."
+
+============================================================
+38. WHAT THE CODING AGENT MUST DO
+============================================================
+
+When implementing the AI subsystem:
+
+STEP 1:
+    inspect the existing repository.
+
+STEP 2:
+    identify existing architecture, database, executor, curriculum,
+    authentication, and AI integration.
+
+STEP 3:
+    map the required AI subsystem onto the existing codebase.
+
+STEP 4:
+    define contracts before implementation.
+
+STEP 5:
+    implement deterministic infrastructure.
+
+STEP 6:
+    implement provider abstraction and failure handling.
+
+STEP 7:
+    implement memory/state structures.
+
+STEP 8:
+    implement tutor reasoning.
+
+STEP 9:
+    implement content pipeline.
+
+STEP 10:
+    implement session/curriculum integration.
+
+STEP 11:
+    implement verification tests alongside every subsystem.
+
+STEP 12:
+    run the complete deterministic verification suite.
+
+STEP 13:
+    run real-model behavioral evaluations where configured.
+
+STEP 14:
+    run complete multi-session E2E scenarios.
+
+STEP 15:
+    inspect failures rather than weakening tests to make them pass.
+
+STEP 16:
+    fix the implementation.
+
+STEP 17:
+    rerun all affected tests.
+
+STEP 18:
+    produce a verification report.
+
+============================================================
+39. IMPORTANT: DO NOT CHEAT THE VERIFICATION
+============================================================
+
+Do NOT:
+
+- weaken assertions simply to make tests pass
+- mock away the component being tested
+- declare success because a provider responded
+- treat generated prose as proof of correctness
+- skip failure scenarios
+- skip persistence tests
+- skip multi-session tests
+- replace behavioral tests with snapshot tests
+- mark untested functionality as verified
+- hide failing scenarios
+- delete regression tests because they expose model variability
+- silently ignore inconsistent learner state
+- fabricate test evidence
+
+If a real model is nondeterministic, design an appropriate behavioral
+evaluation with acceptable properties and thresholds instead of pretending
+exact text equality is appropriate.
+
+============================================================
+40. FINAL ACCEPTANCE TEST
+============================================================
+
+The AI subsystem cannot be considered verified until the system can
+demonstrate this complete scenario:
+
+1. Learner begins Day 1.
+
+2. Tutor retrieves the correct curriculum position.
+
+3. Tutor creates a plan based on actual curriculum and learner state.
+
+4. Tutor starts the session by testing recall.
+
+5. Learner answers.
+
+6. Tutor records evidence.
+
+7. Tutor teaches.
+
+8. Learner becomes stuck.
+
+9. Tutor does not immediately assume the cause.
+
+10. Tutor asks a targeted clarification question.
+
+11. Learner provides environmental context.
+
+12. Tutor changes its interpretation.
+
+13. Tutor chooses a new teaching strategy.
+
+14. Learner practices.
+
+15. Code is executed by the executor.
+
+16. Tutor receives verified execution evidence.
+
+17. Tutor distinguishes conceptual failure from syntax/environment failure
+    where appropriate.
+
+18. Tutor measures more than correctness:
+       understanding
+       independence
+       reasoning
+       retention
+       transfer
+       hint dependency
+
+19. Tutor ends the session.
+
+20. Session report is persisted.
+
+21. Learner state is updated.
+
+22. Tutor experience is updated.
+
+23. Curriculum state is updated.
+
+24. Day 2 is generated from Day 1 state.
+
+25. Tutor recalls Day 1 accurately.
+
+26. Learner asks a historical question.
+
+27. Tutor retrieves actual historical information.
+
+28. Learner challenges a previous tutor interpretation.
+
+29. Tutor investigates rather than defending its previous conclusion.
+
+30. New evidence causes the previous hypothesis to be revised.
+
+31. Original decision remains auditable.
+
+32. Provider failure occurs.
+
+33. Fallback provider takes over.
+
+34. Quota protection prevents background generation from starving the live
+    session.
+
+35. Session continues without losing state.
+
+36. Day 3 can still reconstruct the correct history.
+
+If this complete scenario does not pass, the AI subsystem is NOT VERIFIED.
+
+============================================================
+FINAL RULE
+============================================================
+
+Do not tell me that the AI subsystem "works" because you implemented it.
+
+Show evidence.
+
+For every major claim of correctness, identify:
+
+    WHAT was tested
+    HOW it was tested
+    WHAT the expected behavior was
+    WHAT actually happened
+    WHETHER the result was deterministic
+    WHETHER a real model was involved
+    WHAT remains unverified
+
+The goal is not to produce a convincing test report.
+
+The goal is to make it difficult for an incorrect AI tutor implementation
+to pass the verification system.

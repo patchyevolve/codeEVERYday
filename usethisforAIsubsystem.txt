@@ -1,0 +1,2162 @@
+You are designing and implementing the AI subsystem of a serious long-term coding apprenticeship platform.
+
+IMPORTANT:
+Do NOT redesign the application UI, notification system, general product architecture, or curriculum content itself unless required to define an interface with this AI subsystem.
+
+Your task is to deeply design the AI subsystem that powers a persistent coding tutor.
+
+This is NOT a chatbot.
+
+The system must behave like a persistent human-like tutor who teaches one learner every day through a structured curriculum, remembers previous sessions, continuously evaluates the learner, asks questions during teaching, diagnoses why the learner is struggling, adapts how it teaches, handles clarification and real-world circumstances, and carries the learning state forward from one day to the next.
+
+The AI itself is fallible. The architecture must therefore support uncertainty, clarification, correction, historical reasoning, and revision of previous tutor decisions.
+
+Do not simplify this into:
+    user message -> LLM -> response
+
+That architecture is explicitly insufficient.
+
+============================================================
+1. CORE OBJECTIVE
+============================================================
+
+Build an AI subsystem that can continuously perform this loop:
+
+    determine what the learner should learn
+    -> inspect what the learner currently understands
+    -> teach
+    -> ask questions
+    -> observe answers and behavior
+    -> form hypotheses about understanding/problems
+    -> clarify ambiguous situations with the learner
+    -> choose a teaching intervention
+    -> observe whether it worked
+    -> update learner state
+    -> update tutor knowledge about what worked
+    -> determine what should happen next
+    -> produce a persistent session report
+    -> use that report in future sessions
+
+The tutor must preserve continuity across many sessions.
+
+The tutor must know:
+    what was planned
+    what actually happened
+    what was learned
+    what was not learned
+    what misconceptions appeared
+    what questions the learner asked
+    what teaching methods worked
+    what teaching methods failed
+    what the tutor previously believed
+    whether previous tutor beliefs were later proven wrong
+    what should happen next
+    where the learner currently sits in the curriculum
+
+============================================================
+2. FUNDAMENTAL DESIGN PRINCIPLES
+============================================================
+
+Treat the LLM as a probabilistic reasoning component, NOT as the source of truth.
+
+The system owns:
+    application state
+    curriculum state
+    session state
+    historical records
+    content approval state
+    provider state
+    quota state
+    execution results
+    learner evidence
+
+The LLM provides:
+    interpretation
+    reasoning
+    pedagogical decisions
+    natural-language teaching
+    content generation
+    hypothesis generation
+    diagnosis
+    adaptation
+
+Never allow an LLM response to silently become authoritative system state.
+
+Every important AI interpretation must be distinguishable from the underlying evidence.
+
+For example:
+
+FACT:
+    learner omitted a semicolon five times
+
+INTERPRETATION:
+    learner may have a syntax weakness
+
+ALTERNATIVE:
+    learner may have an input-device problem
+
+LEARNER CONTEXT:
+    learner says their semicolon key intermittently fails
+
+DECISION:
+    do not count those syntax errors as strong evidence of C++ weakness
+
+OUTCOME:
+    later syntax performance is normal
+
+The system must preserve these distinctions.
+
+============================================================
+3. MAJOR AI SUBSYSTEMS
+============================================================
+
+Design the subsystem as these major components:
+
+A. AI Provider Infrastructure
+B. AI Orchestrator
+C. AI Content Generation System
+D. Curriculum Intelligence
+E. Learner Model
+F. Memory System
+G. Tutor Reasoning Engine
+H. Interaction / Clarification Engine
+I. Session Engine
+J. Session Reporting / Handoff
+K. Tutor Experience / Decision Memory
+L. AI Evaluation and Quality System
+
+Do not merge these into one giant service/class.
+
+Define clear interfaces between them.
+
+============================================================
+4. A. AI PROVIDER INFRASTRUCTURE
+============================================================
+
+The tutor and all higher-level components must be provider-independent.
+
+The system must support multiple providers and multiple models.
+
+Examples may include:
+    OpenAI
+    Gemini
+    Groq
+    OpenRouter
+    local models
+    future providers
+
+Do not hardcode these provider names into tutor logic.
+
+Create an abstract AI Gateway.
+
+Conceptually it should support requests like:
+
+    generate(request)
+    stream(request)
+    structuredGenerate(request)
+
+The caller specifies a task and required capabilities.
+
+The caller must NOT specify:
+    "always use provider X"
+
+The model router determines the actual provider/model.
+
+Provider metadata must include:
+    providerId
+    modelId
+    capabilities
+    contextWindow
+    outputLimit
+    latency characteristics
+    cost characteristics
+    rate limits
+    quota limits
+    structured output support
+    streaming support
+    tool calling support
+    current health
+    availability
+
+============================================================
+5. AI TASK TYPES
+============================================================
+
+Define explicit AI task types.
+
+At minimum:
+
+    CURRICULUM_PLANNING
+    DAILY_SESSION_PLANNING
+    SESSION_REVIEW
+    LEARNER_DIAGNOSIS
+    HYPOTHESIS_GENERATION
+    HYPOTHESIS_EVALUATION
+    TUTOR_EXPLANATION
+    TUTOR_CLARIFICATION
+    TUTOR_HINT
+    TUTOR_DEEP_EXPLANATION
+    TUTOR_EXAMPLE
+    TUTOR_ANALOGY
+    TUTOR_DEBUGGING
+    TUTOR_CODE_REVIEW
+    TUTOR_CONCEPT_DISCUSSION
+    SESSION_SUMMARY
+    LEARNER_STATE_ANALYSIS
+
+    CONTENT_GENERATION
+    CONTENT_REVIEW
+    CONTENT_REPAIR
+    CONTENT_CLASSIFICATION
+    CONTENT_DEDUPLICATION
+    REMEDIATION_GENERATION
+
+The router should select models based on task requirements.
+
+============================================================
+6. PROVIDER QUOTA AND RATE LIMIT MANAGEMENT
+============================================================
+
+This is a first-class subsystem.
+
+Track independently:
+    requests per minute
+    tokens per minute
+    requests per day
+    tokens per day
+    monthly limits
+    spending limits
+    provider-specific quotas
+
+Distinguish:
+
+RATE_LIMIT:
+    temporary capacity problem
+
+DAILY_QUOTA_EXHAUSTED:
+    provider cannot be used until reset
+
+PROVIDER_FAILURE:
+    service failure
+
+MODEL_UNAVAILABLE:
+    specific model unavailable
+
+INVALID_REQUEST:
+    do not retry blindly
+
+Quota must be reservable atomically.
+
+Example:
+    background generation must not consume the final AI capacity needed by a learner currently in an active session.
+
+Define request priorities.
+
+Recommended priority classes:
+
+    P0 = learner currently waiting for tutor response
+    P1 = active session critical work
+    P2 = preparation for upcoming session
+    P3 = background content generation
+    P4 = optimization / regeneration / experiments
+
+P3/P4 work must be preemptible or deferrable.
+
+Never let background jobs exhaust capacity reserved for P0/P1.
+
+============================================================
+7. PROVIDER FALLBACK
+============================================================
+
+Implement:
+
+    retries
+    exponential backoff
+    jitter
+    Retry-After support
+    circuit breaker
+    health tracking
+    fallback routing
+
+Do not retry daily quota exhaustion.
+
+Do not retry invalid API credentials indefinitely.
+
+Do not retry malformed requests indefinitely.
+
+If provider A is unavailable:
+
+    choose another model satisfying the same capability requirements
+
+The fallback must receive the same semantic task, constraints, context, and output schema.
+
+Provider-specific details must remain inside provider adapters.
+
+============================================================
+8. AI REQUEST OBSERVABILITY
+============================================================
+
+Every AI request must have:
+
+    requestId
+    taskType
+    priority
+    userId
+    sessionId if applicable
+    jobId if applicable
+    provider
+    model
+    promptVersion
+    createdAt
+    completedAt
+    latency
+    token usage
+    estimated cost
+    retry count
+    fallback information
+    result status
+    error information
+
+The system must make it possible to answer:
+
+    Why was this model selected?
+    Why did fallback happen?
+    Why did this request fail?
+    How much quota was consumed?
+    Which provider generated this content?
+    Which prompt version generated it?
+
+============================================================
+9. B. AI ORCHESTRATOR
+============================================================
+
+The AI Orchestrator coordinates all AI tasks.
+
+It must handle:
+
+    task creation
+    priority
+    context requirements
+    model requirements
+    provider routing
+    quota reservation
+    caching
+    execution
+    validation
+    fallback
+    result recording
+
+Higher-level components should call the orchestrator rather than provider SDKs.
+
+Example:
+
+    TutorEngine
+        -> Orchestrator.request(TUTOR_EXPLANATION)
+
+NOT:
+
+    TutorEngine
+        -> OpenAI SDK
+
+============================================================
+10. C. CONTENT GENERATION SYSTEM
+============================================================
+
+Content generation is different from live tutoring.
+
+Live tutoring is:
+    dynamic
+    contextual
+    low latency
+    usually ephemeral
+
+Content generation is:
+    reusable
+    persistent
+    expensive
+    validated
+    versioned
+
+Never automatically publish generated content.
+
+Pipeline:
+
+    content requirement
+    -> search approved content
+    -> if suitable content exists, reuse it
+    -> otherwise queue generation
+    -> generate candidate
+    -> schema validation
+    -> deterministic validation
+    -> AI semantic review
+    -> repair if necessary
+    -> final validation
+    -> approve
+    -> persist
+    -> make available to tutor
+
+============================================================
+11. CONTENT GENERATION MUST BE NEED-DRIVEN
+============================================================
+
+Do not generate arbitrary educational material.
+
+A generation request must have:
+
+    concept
+    learning objective
+    learner level
+    prerequisites
+    reason for generation
+    desired resource type
+    difficulty
+    expected duration
+    curriculum context
+    known learner weaknesses if relevant
+
+Example:
+
+    learner has weak understanding of object lifetime
+    tomorrow requires RAII
+    existing remediation content is insufficient
+
+Therefore:
+
+    generate targeted object-lifetime remediation resource
+
+This is better than:
+
+    generate lesson about object lifetime
+
+============================================================
+12. CONTENT REVIEW
+============================================================
+
+AI-generated content must be reviewed against its original requirements.
+
+The reviewer should receive:
+
+    original content requirement
+    learner level
+    prerequisites
+    learning objective
+    generated content
+    technical constraints
+
+The reviewer must return structured issues.
+
+Possible issue types:
+
+    TECHNICAL_ERROR
+    PREREQUISITE_VIOLATION
+    PEDAGOGICAL_ERROR
+    DIFFICULTY_MISMATCH
+    AMBIGUITY
+    DUPLICATION
+    INCORRECT_EXAMPLE
+    INVALID_EXERCISE
+    INCORRECT_EXPECTED_OUTPUT
+    INCONSISTENT_DEFINITION
+
+Use bounded generation/review/repair loops.
+
+Never allow unlimited AI regeneration.
+
+============================================================
+13. CONTENT VALIDATION
+============================================================
+
+Use deterministic validation wherever possible.
+
+For coding content:
+
+    compile generated solution
+    execute tests
+    verify expected outputs
+    verify edge cases
+
+For structured content:
+
+    schema validation
+    required fields
+    references to valid concepts
+    prerequisite validity
+
+AI semantic review is additional validation, not a replacement for deterministic validation.
+
+============================================================
+14. CONTENT VERSIONING
+============================================================
+
+Approved content must be immutable by version.
+
+Example:
+
+    pointer-lifetime v1
+    pointer-lifetime v2
+
+Never silently mutate v1.
+
+Store:
+
+    contentId
+    version
+    generation provider
+    generation model
+    prompt version
+    reviewer
+    validation results
+    createdAt
+    supersededBy if applicable
+
+This allows historical reconstruction.
+
+============================================================
+15. D. CURRICULUM INTELLIGENCE
+============================================================
+
+Curriculum position must be persistent.
+
+Do NOT determine progress simply by:
+
+    next item in list
+
+The curriculum is a dependency graph.
+
+Each concept should have:
+
+    prerequisites
+    learning objectives
+    relationships
+    level
+    available resources
+    recommended progression
+
+Learner state must include:
+
+    current curriculum position
+    completed concepts
+    partially understood concepts
+    weak prerequisites
+    remediation requirements
+    review requirements
+    planned next concepts
+
+The curriculum engine determines:
+
+    where the learner should go
+
+The tutor engine determines:
+
+    how to get the learner there
+
+============================================================
+16. DAILY SESSION PLANNING
+============================================================
+
+A new daily session must be derived from:
+
+    curriculum state
+    previous session report
+    recent session history
+    long-term learner model
+    unresolved work
+    retention/review requirements
+    planned curriculum trajectory
+    tutor observations
+    available approved content
+
+Do NOT create each day independently.
+
+Example:
+
+Yesterday:
+    planned:
+        understand object lifetime
+
+    completed:
+        stack lifetime
+
+    incomplete:
+        dangling references
+
+    observed weakness:
+        lifetime vs scope confusion
+
+    successful teaching strategy:
+        memory diagrams
+
+Today should therefore consider:
+
+    short retrieval of yesterday
+    finish dangling references
+    verify lifetime understanding
+    only then progress toward RAII
+
+The planner must produce the reason for the plan.
+
+============================================================
+17. SESSION PLAN
+============================================================
+
+A session plan may contain:
+
+    session objective
+    why this objective is appropriate
+    retrieval items
+    prerequisite checks
+    teaching segments
+    questions
+    practice
+    exercises
+    transfer/application
+    assessment
+    fallback/remediation path
+    expected next state
+
+The tutor is allowed to deviate from the plan when evidence requires it.
+
+Example:
+
+    planned:
+        teach RAII
+
+    session evidence:
+        learner cannot explain object lifetime
+
+    tutor decision:
+        pause RAII
+        repair lifetime understanding
+        re-check
+        continue only if sufficient
+
+============================================================
+18. E. LEARNER MODEL
+============================================================
+
+Do NOT represent the learner using one mastery number.
+
+Maintain multidimensional state.
+
+At minimum:
+
+    conceptual_understanding
+    procedural_skill
+    implementation_skill
+    problem_recognition
+    reasoning
+    explanation_ability
+    debugging_skill
+    transfer_ability
+    retention
+    independence
+    hint_dependency
+    confidence
+
+Each estimate must have:
+
+    value
+    confidence
+    evidence references
+    lastUpdated
+    update history
+
+Example:
+
+    concept: binary-search
+
+    conceptual understanding:
+        value = 0.84
+        confidence = 0.76
+
+    implementation:
+        value = 0.91
+        confidence = 0.91
+
+    problem recognition:
+        value = 0.48
+        confidence = 0.63
+
+This allows the tutor to identify that a learner may be able to implement binary search but not recognize when binary search is appropriate.
+
+============================================================
+19. F. MEMORY SYSTEM
+============================================================
+
+Do NOT rely on raw conversation history as the primary memory mechanism.
+
+Maintain structured memory.
+
+Separate:
+
+A. FACTUAL SESSION MEMORY
+    what happened
+
+B. LEARNER MEMORY
+    what we currently believe about the learner
+
+C. HISTORICAL MEMORY
+    exact past sessions/events
+
+D. TUTOR EXPERIENCE MEMORY
+    what teaching decisions worked or failed
+
+E. TEMPORARY CONTEXT
+    current environmental/situational factors
+
+============================================================
+20. SESSION MEMORY
+============================================================
+
+Record:
+
+    sessionId
+    date
+    objective
+    planned activities
+    actual activities
+    concepts discussed
+    learner questions
+    learner answers
+    mistakes
+    exercises
+    results
+    hints
+    interventions
+    learner claims
+    environmental context
+    unfinished work
+    tutor decisions
+    outcomes
+
+============================================================
+21. LEARNER MEMORY
+============================================================
+
+Store long-term observations such as:
+
+    concept understanding
+    persistent misconceptions
+    retention
+    recurring problem-solving weaknesses
+    independent ability
+    successful teaching approaches
+    unsuccessful teaching approaches
+
+Do not convert one observation into a permanent learner attribute.
+
+Use evidence and confidence.
+
+============================================================
+22. HISTORICAL MEMORY
+============================================================
+
+The tutor must answer questions such as:
+
+    "What did we do on Monday?"
+    "When did we learn pointers?"
+    "What did you teach me yesterday?"
+    "Did we already cover this?"
+    "What was I struggling with last week?"
+    "What did we plan to do today?"
+    "Why are we revisiting this?"
+
+These queries must retrieve actual historical records.
+
+Never allow the LLM to invent historical information.
+
+============================================================
+23. TUTOR EXPERIENCE MEMORY
+============================================================
+
+The tutor must remember its own teaching history.
+
+Example:
+
+    concept:
+        recursion
+
+    learner problem:
+        call-stack mental model
+
+    strategy:
+        analogy
+
+    outcome:
+        ineffective
+
+    strategy:
+        manual tracing
+
+    outcome:
+        effective
+
+Future tutor decisions can use this evidence.
+
+This is not learner memory.
+
+It is memory about the tutor's previous interventions and their outcomes.
+
+============================================================
+24. G. TUTOR REASONING ENGINE
+============================================================
+
+This is the core component.
+
+The tutor must operate as a reasoning loop.
+
+The loop is:
+
+    observe
+    -> extract evidence
+    -> identify possible interpretations
+    -> check existing learner state
+    -> generate hypotheses
+    -> identify uncertainty
+    -> determine whether clarification is needed
+    -> ask learner if necessary
+    -> interpret learner response
+    -> revise hypotheses
+    -> choose intervention
+    -> teach
+    -> observe outcome
+    -> evaluate intervention
+    -> update learner model
+    -> update tutor experience
+    -> choose next action
+
+Do NOT implement:
+
+    user message
+    -> LLM
+    -> answer
+
+as the primary architecture.
+
+============================================================
+25. FACT VS INTERPRETATION
+============================================================
+
+The tutor must explicitly distinguish:
+
+FACT:
+    learner made 5 punctuation errors
+
+INTERPRETATION:
+    possible syntax weakness
+
+ALTERNATIVE:
+    input-device issue
+
+LEARNER CONTEXT:
+    learner reports comma key intermittently fails
+
+CONCLUSION:
+    punctuation errors should not currently be used as strong evidence of syntax weakness
+
+This distinction must exist in the internal state model.
+
+============================================================
+26. LEARNER CONTEXT CAN CHANGE THE INTERPRETATION
+============================================================
+
+Example:
+
+Tutor observes:
+    learner repeatedly misses commas.
+
+Initial possible explanation:
+    syntax weakness.
+
+Tutor asks:
+    "Are you unsure where the punctuation belongs, or is the issue mainly when typing it?"
+
+Learner:
+    "My comma key doesn't work properly sometimes."
+
+Tutor must update its interpretation.
+
+It must NOT continue reasoning:
+
+    syntax mistakes
+    -> syntax weakness
+    -> more syntax teaching
+
+The environmental explanation must be incorporated into current context.
+
+This context may be temporary.
+
+Do not permanently label the learner as having a keyboard problem.
+
+============================================================
+27. THE LEARNER IS A SOURCE OF EVIDENCE
+============================================================
+
+The learner can provide information unavailable to the system:
+
+    environmental problems
+    hardware issues
+    intent
+    reasoning behind an answer
+    misunderstanding of the question
+    prior knowledge
+    external constraints
+    time constraints
+    personal context relevant to the session
+
+Learner statements must influence reasoning.
+
+However, learner statements are evidence, not automatically verified truth.
+
+When necessary, verify through another question or observation.
+
+============================================================
+28. CLARIFICATION ENGINE
+============================================================
+
+When multiple plausible explanations exist, do not blindly choose one.
+
+Determine:
+
+    what information would distinguish the explanations?
+
+Then ask the smallest useful clarification question.
+
+Example:
+
+Possible causes:
+    syntax weakness
+    typing problem
+    rushing
+
+Useful question:
+    "When you're reading code, do you know where the punctuation goes, and is the problem mainly when you're typing?"
+
+Do not ask unnecessary chains of questions.
+
+============================================================
+29. INTERACTION TYPES
+============================================================
+
+The interaction engine must support at minimum:
+
+    QUESTION
+    WHY_QUESTION
+    CLARIFICATION
+    CONFUSION
+    STUCK
+    HINT_REQUEST
+    SOLUTION_REQUEST
+    EXAMPLE_REQUEST
+    ANALOGY_REQUEST
+    DEEP_EXPLANATION
+    CODE_HELP
+    DEBUGGING
+    CODE_REVIEW
+    CONCEPT_COMPARISON
+    HISTORICAL_QUERY
+    PROGRESS_QUERY
+    CURRICULUM_QUERY
+    OFF_TOPIC
+    LEARNER_CORRECTION
+    LEARNER_CLAIM
+
+Interpret the user's actual meaning, not just keywords.
+
+============================================================
+30. INTERACTION IS NOT LIMITED TO CODING
+============================================================
+
+The tutor is teaching throughout the entire session.
+
+The learner can interrupt with:
+
+    "Why is this needed?"
+    "I don't understand this part."
+    "Can you explain that differently?"
+    "Didn't we learn this yesterday?"
+    "Why are we learning this now?"
+    "I remember you explaining this differently."
+    "What did we do last Tuesday?"
+    "Can you give me a real-world example?"
+    "I'm stuck but I don't know why."
+    "I think I understand it but I can't implement it."
+
+All of these must be handled within the current session context and curriculum trajectory.
+
+============================================================
+31. QUESTIONS MUST HAVE PURPOSE
+============================================================
+
+Questions asked by the tutor should generally serve a purpose:
+
+    VERIFY_RECALL
+    TEST_UNDERSTANDING
+    TEST_TRANSFER
+    IDENTIFY_MISCONCEPTION
+    DISTINGUISH_HYPOTHESES
+    CHECK_PREREQUISITE
+    CHECK_INDEPENDENCE
+    CHECK_RETENTION
+    CHECK_PROBLEM_RECOGNITION
+    CHECK_REASONING
+
+Do not ask questions merely to simulate conversation.
+
+============================================================
+32. TEACHING MUST BE ACTIVE
+============================================================
+
+A session should not be:
+
+    AI monologue
+    -> exercise
+    -> score
+
+Instead:
+
+    teach
+    -> ask
+    -> listen
+    -> interpret
+    -> adapt
+    -> ask again
+    -> practice
+    -> diagnose
+    -> teach differently if required
+
+The tutor must continuously gather evidence.
+
+============================================================
+33. ROOT-CAUSE REASONING
+============================================================
+
+The tutor must not assume the visible failure is the root cause.
+
+Example:
+
+    learner repeatedly fails binary search
+
+Possible causes:
+
+    indexing
+    loops
+    sortedness
+    search-space reasoning
+    invariants
+    problem interpretation
+    implementation
+    complexity understanding
+
+The tutor should investigate before choosing remediation.
+
+If several related concepts fail, investigate shared prerequisites.
+
+Example:
+
+    pointers weak
+    references weak
+    lifetime weak
+    RAII weak
+
+Possible shared cause:
+
+    underlying memory/object model weakness
+
+The tutor should test this possibility.
+
+============================================================
+34. MULTI-SIGNAL REASONING
+============================================================
+
+Do not determine learner state from one signal.
+
+Combine:
+
+    assessment results
+    coding performance
+    debugging performance
+    explanations
+    predictions
+    transfer problems
+    hint usage
+    time
+    repeated mistakes
+    self-corrections
+    learner statements
+    historical performance
+    retention checks
+
+A learner who gets 10/10 questions correct but requires constant hints is not equivalent to a learner who independently solves them.
+
+============================================================
+35. TUTOR HYPOTHESES
+============================================================
+
+A tutor hypothesis should contain:
+
+    hypothesisId
+    subject
+    statement
+    confidence
+    supportingEvidence
+    contradictingEvidence
+    alternatives
+    createdAt
+    lastEvaluatedAt
+    status
+
+Possible statuses:
+
+    ACTIVE
+    UNCERTAIN
+    CONFIRMED
+    WEAKENED
+    DISPROVEN
+    SUPERSEDED
+
+The tutor must be able to revise its interpretation when new information arrives.
+
+============================================================
+36. TUTOR MISTAKES
+============================================================
+
+The tutor can make wrong decisions.
+
+This is expected.
+
+Do NOT erase the mistake.
+
+Example:
+
+Initial belief:
+    learner has weak recursion understanding
+
+Later evidence:
+    learner solves unfamiliar recursion problems correctly
+
+Revision:
+    original diagnosis was likely wrong
+
+Store:
+
+    original hypothesis
+    evidence
+    decision
+    outcome
+    correction
+    new hypothesis
+
+Future tutor reasoning should be able to retrieve this experience.
+
+The system should learn:
+
+    "This pattern previously looked like recursion weakness,
+     but that interpretation was incorrect."
+
+============================================================
+37. TUTOR SHOULD BE ABLE TO ASK FOR CLARIFICATION
+============================================================
+
+If the tutor does not know why something happened, it should ask.
+
+Examples:
+
+    "Was that an intentional choice or did you not know this part?"
+
+    "Did you understand the algorithm but get stuck implementing it?"
+
+    "Are you unsure about the syntax, or is the editor causing the issue?"
+
+    "Do you remember the concept but not how to apply it?"
+
+Do not force the tutor to produce a confident diagnosis when evidence is insufficient.
+
+============================================================
+38. TUTOR SHOULD NOT BLINDLY TRUST LEARNER CLAIMS
+============================================================
+
+If learner says:
+
+    "I already know this."
+
+The tutor can verify with a short question or transfer problem.
+
+If successful:
+    reduce/reuse explanation
+
+If unsuccessful:
+    identify the actual gap
+
+If learner says:
+    "I don't understand anything."
+
+The tutor should identify what specifically is unclear.
+
+============================================================
+39. TUTOR SHOULD HANDLE EXTERNAL/ENVIRONMENTAL CAUSES
+============================================================
+
+Potential non-learning causes include:
+
+    keyboard/input problems
+    compiler problems
+    editor problems
+    network failures
+    copied-code corruption
+    ambiguous problem statement
+    time constraints
+    temporary distractions
+
+Do not interpret these automatically as evidence of learner weakness.
+
+Tool/environment evidence should be included in tutor reasoning.
+
+============================================================
+40. H. PEDAGOGICAL STRATEGY
+============================================================
+
+Supported strategies should include:
+
+    DIRECT_EXPLANATION
+    SIMPLIFICATION
+    ANALOGY
+    CONCRETE_EXAMPLE
+    COUNTEREXAMPLE
+    VISUAL_MODEL
+    CODE_TRACE
+    PREDICTION
+    SOCRATIC_QUESTION
+    GUIDED_PROBLEM
+    DEBUGGING
+    PREREQUISITE_REVIEW
+    COMPARISON
+    REAL_WORLD_APPLICATION
+    TRANSFER_PROBLEM
+    SPACED_REVIEW
+    INDEPENDENT_ATTEMPT
+
+The tutor should select strategies based on evidence.
+
+If a strategy repeatedly fails, stop repeating it blindly.
+
+============================================================
+41. TEACHING STRATEGY MEMORY
+============================================================
+
+Track strategy outcomes.
+
+Example:
+
+    learner problem:
+        call-stack understanding
+
+    analogy:
+        ineffective
+
+    diagram:
+        effective
+
+    tracing:
+        highly effective
+
+Future decisions can prefer strategies with evidence of effectiveness.
+
+Do not turn this into rigid permanent learner stereotypes.
+
+Keep it contextual:
+
+    concept
+    problem type
+    learner state
+    strategy
+    outcome
+
+============================================================
+42. I. SESSION ENGINE
+============================================================
+
+The session engine controls the active session.
+
+It should maintain:
+
+    sessionId
+    learnerId
+    sessionDate
+    sessionObjective
+    currentConcept
+    currentActivity
+    currentPhase
+    plannedSteps
+    completedSteps
+    deviations
+    unresolvedIssues
+    activeHypotheses
+    relevantContext
+    timeBudget
+
+The tutor may recommend a change.
+
+The session engine validates and applies state transitions.
+
+============================================================
+43. SESSION PHASES
+============================================================
+
+A session may include:
+
+    OPENING
+    RECALL
+    DIAGNOSTIC
+    TEACHING
+    INTERACTION
+    GUIDED_PRACTICE
+    INDEPENDENT_PRACTICE
+    TRANSFER
+    ASSESSMENT
+    REFLECTION
+    CLOSING
+
+Do not require every session to use every phase.
+
+The tutor may adapt the sequence.
+
+============================================================
+44. SESSION OPENING
+============================================================
+
+The tutor should begin by establishing continuity.
+
+It should retrieve:
+
+    previous session report
+    current curriculum position
+    unfinished work
+    relevant learner state
+
+Then conduct active retrieval.
+
+Example:
+
+    "Yesterday we worked on object lifetime.
+     Before we continue, tell me what you remember about why
+     returning a reference to a local variable is dangerous."
+
+The answer becomes evidence.
+
+Do not treat:
+    "yeah I remember"
+as sufficient evidence.
+
+============================================================
+45. SESSION REPORT
+============================================================
+
+At the end of each session generate a structured report.
+
+The report must contain:
+
+    planned objectives
+    completed objectives
+    incomplete objectives
+    concepts taught
+    evidence collected
+    learner strengths
+    learner weaknesses
+    misconceptions
+    unresolved hypotheses
+    successful teaching strategies
+    unsuccessful strategies
+    learner questions
+    learner-provided context
+    environmental issues
+    independent performance
+    hint dependency
+    retention observations
+    tutor decisions
+    tutor decisions that appear incorrect
+    recommended next actions
+
+This is not merely a summary.
+
+It is a handoff for the next tutor session.
+
+============================================================
+46. NEXT SESSION PLANNING
+============================================================
+
+The next session planner must use:
+
+    previous session report
+    current curriculum state
+    learner model
+    historical evidence
+    tutor experience
+    retention schedule
+    unfinished work
+    curriculum prerequisites
+
+The plan must explain WHY today's work was selected.
+
+Example:
+
+    "Continue dangling references because yesterday's session
+     established the basic lifetime model but the learner could
+     not independently identify the dangling-reference failure."
+
+============================================================
+47. J. MEMORY RETRIEVAL
+============================================================
+
+Use different retrieval mechanisms for different questions.
+
+Exact historical query:
+    structured date/session lookup
+
+Concept history:
+    concept-indexed retrieval
+
+Semantic historical question:
+    semantic retrieval over relevant session events
+
+Current learner state:
+    structured learner model
+
+Current session:
+    session state
+
+Do not use vector search for every problem.
+
+Do not send the entire history to the model.
+
+============================================================
+48. CONTEXT COMPILER
+============================================================
+
+Create a ContextCompiler.
+
+It should construct model context from:
+
+    system tutor policy
+    curriculum objective
+    current session
+    relevant learner state
+    relevant history
+    relevant tutor experience
+    approved content
+    current activity
+    current learner message
+
+It must enforce a context budget.
+
+It should select relevant information rather than blindly appending history.
+
+============================================================
+49. MEMORY AUTHORITY
+============================================================
+
+When sources conflict:
+
+    application state and verified execution results
+    > approved curriculum
+    > verified historical records
+    > learner statements
+    > tutor hypotheses
+    > model speculation
+
+However, learner statements can introduce information unavailable elsewhere.
+
+Therefore learner statements should be treated as evidence requiring appropriate verification, not ignored.
+
+============================================================
+50. K. AI CONTENT + LIVE TUTOR SEPARATION
+============================================================
+
+Do not confuse these.
+
+CONTENT GENERATION:
+    creates reusable assets
+    can run asynchronously
+    can wait for quota
+    requires validation
+    persists approved output
+
+LIVE TUTOR:
+    learner is waiting
+    low latency
+    high priority
+    must work even if background generation is unavailable
+    should reuse approved content whenever possible
+
+Background generation must never starve live tutoring.
+
+============================================================
+51. LIVE TUTOR DEGRADATION
+============================================================
+
+If AI providers fail:
+
+    first use another capable provider
+    then use approved existing content
+    then use prepared hints/examples/explanations
+    then preserve session state and degrade gracefully
+
+Never lose learner progress because of provider failure.
+
+============================================================
+52. CONTENT RETRIEVAL BEFORE GENERATION
+============================================================
+
+Whenever tutor needs:
+
+    explanation
+    example
+    exercise
+    hint
+    remediation
+
+first check approved content.
+
+Only generate new content if existing content is insufficient.
+
+This is critical for:
+
+    cost
+    quota
+    latency
+    consistency
+    reliability
+
+============================================================
+53. L. QUALITY / EVALUATION
+============================================================
+
+Evaluate the tutor itself.
+
+Measure:
+
+    diagnosis accuracy
+    false diagnosis rate
+    unnecessary remediation
+    missed remediation
+    intervention effectiveness
+    learner independence
+    hint dependency
+    retention
+    transfer
+    repeated misconception rate
+    curriculum progression quality
+    unnecessary AI usage
+    provider failure rate
+    cost per successful learning outcome
+
+Do not measure only:
+
+    number of AI calls
+    number of completed exercises
+    chat length
+
+============================================================
+54. TUTOR DECISION AUDITING
+============================================================
+
+For important decisions store:
+
+    decisionId
+    sessionId
+    learnerId
+    observations
+    relevant evidence
+    candidate hypotheses
+    selected hypothesis
+    confidence
+    action
+    expected outcome
+    actual outcome
+    later evaluation
+    correction if wrong
+
+This allows the system to improve its tutoring logic.
+
+============================================================
+55. HIGH-RISK VS LOW-RISK AI DECISIONS
+============================================================
+
+Do not spend expensive reasoning on everything.
+
+LOW RISK:
+    wording of simple explanation
+    simple example
+
+MEDIUM:
+    teaching strategy
+    diagnosis of a local mistake
+
+HIGH:
+    changing curriculum direction
+    skipping prerequisites
+    declaring mastery
+    significant remediation
+    changing long-term learner model
+
+Higher-risk decisions require stronger evidence and potentially additional verification.
+
+============================================================
+56. IMPORTANT ANTI-PATTERNS
+============================================================
+
+Do NOT implement any of the following:
+
+1. One giant tutor prompt containing the entire learner history.
+
+2. Direct provider calls from tutor code.
+
+3. One global mastery score.
+
+4. Automatically treating every mistake as evidence of lack of knowledge.
+
+5. Automatically trusting every learner statement.
+
+6. Automatically distrusting learner statements.
+
+7. Generating new content whenever the tutor needs something.
+
+8. Publishing AI-generated content without validation.
+
+9. Using one model as generator, judge, and unquestioned authority for all high-risk content.
+
+10. Allowing background AI jobs to consume all quota.
+
+11. Treating raw chat history as the only memory.
+
+12. Silently overwriting incorrect tutor decisions.
+
+13. Letting the LLM directly mutate authoritative curriculum state.
+
+14. Assuming the learner's current problem is always the root cause.
+
+15. Repeating the same teaching strategy after evidence shows it is ineffective.
+
+16. Asking questions merely to make the conversation look human.
+
+17. Advancing curriculum simply because the learner passed one exercise.
+
+18. Reverting curriculum simply because the learner failed one exercise.
+
+19. Treating temporary environmental issues as permanent learner traits.
+
+20. Making the tutor provider-dependent.
+
+============================================================
+57. DATA RELATIONSHIP
+============================================================
+
+The implementation should conceptually preserve these relationships:
+
+    SESSION
+        contains
+            EvidenceEvents
+            TutorDecisions
+            LearnerClaims
+            Interventions
+            Outcomes
+
+    EVIDENCE_EVENT
+        may support
+            LearnerState
+            TutorHypothesis
+
+    TUTOR_HYPOTHESIS
+        produces
+            TutorDecision
+
+    TUTOR_DECISION
+        produces
+            Intervention
+
+    INTERVENTION
+        produces
+            Outcome
+
+    OUTCOME
+        updates
+            LearnerModel
+            TutorExperience
+
+    SESSION
+        produces
+            SessionReport
+
+    SESSION_REPORT
+        updates
+            CurriculumState
+            LearnerModel
+            Memory
+
+    CURRICULUM_STATE
+        produces
+            DailyPlan
+
+    DAILY_PLAN
+        starts
+            Session
+
+This creates the persistent learning loop.
+
+============================================================
+58. EXPECTED REAL-LIFE BEHAVIOR
+============================================================
+
+The implementation must support scenarios such as:
+
+SCENARIO A:
+
+Tutor notices repeated punctuation errors.
+
+Tutor does NOT immediately conclude:
+    syntax weakness.
+
+Tutor asks for clarification.
+
+Learner explains:
+    keyboard key intermittently fails.
+
+Tutor updates context.
+
+Those errors are not treated as strong learning evidence.
+
+------------------------------------------------------------
+
+SCENARIO B:
+
+Learner says:
+    "I already know recursion."
+
+Tutor verifies with a transfer/diagnostic question.
+
+Learner succeeds.
+
+Tutor reduces introductory explanation.
+
+------------------------------------------------------------
+
+SCENARIO C:
+
+Learner says:
+    "I don't understand recursion."
+
+Tutor asks what specifically is unclear.
+
+Learner explains:
+    "I understand what recursion is, but I don't understand
+     what happens to previous calls."
+
+Tutor identifies:
+    call-stack mental model issue.
+
+Tutor changes teaching strategy to stack tracing.
+
+------------------------------------------------------------
+
+SCENARIO D:
+
+Learner repeatedly fails several apparently different concepts.
+
+Tutor detects a shared prerequisite.
+
+Instead of teaching each failed concept independently,
+the tutor investigates the underlying prerequisite.
+
+------------------------------------------------------------
+
+SCENARIO E:
+
+Tutor previously diagnosed a concept weakness incorrectly.
+
+Later evidence proves the diagnosis wrong.
+
+The system records the correction.
+
+Future tutor reasoning can retrieve that experience.
+
+------------------------------------------------------------
+
+SCENARIO F:
+
+Primary AI provider reaches daily quota during an active session.
+
+Background content generation is paused.
+
+A fallback model handles the live tutor.
+
+Prepared approved content remains available.
+
+The session continues.
+
+------------------------------------------------------------
+
+SCENARIO G:
+
+Learner asks:
+    "What did we do on August 5?"
+
+The tutor retrieves the actual historical session,
+summarizes it,
+and does not invent information.
+
+------------------------------------------------------------
+
+SCENARIO H:
+
+Learner asks:
+    "Why are we doing this today?"
+
+Tutor explains using:
+    curriculum state
+    previous session report
+    current weakness
+    planned progression
+
+The answer should have a real reason.
+
+============================================================
+59. IMPLEMENTATION PHILOSOPHY
+============================================================
+
+Build the subsystem as a closed-loop reasoning system.
+
+The fundamental data flow is:
+
+    FACT
+    -> INTERPRETATION
+    -> HYPOTHESIS
+    -> CLARIFICATION
+    -> DECISION
+    -> ACTION
+    -> OUTCOME
+    -> RE-EVALUATION
+    -> UPDATED STATE
+
+The system must preserve each stage.
+
+Do not collapse them into one LLM response.
+
+The tutor must be able to say, internally:
+
+    "I observed X."
+
+    "I initially thought Y."
+
+    "The learner told me Z."
+
+    "That makes Y less likely."
+
+    "I need one more piece of evidence."
+
+    "I will test it using this question."
+
+    "The learner's response supports hypothesis A."
+
+    "I will use intervention B."
+
+    "The intervention did not work."
+
+    "Therefore my previous diagnosis or teaching strategy may have
+     been wrong."
+
+    "I will change approach."
+
+That is the intended intelligence model.
+
+============================================================
+60. IMPLEMENTATION ORDER
+============================================================
+
+Do not implement the entire system as one huge feature.
+
+First design interfaces/contracts.
+
+Then implement in this order:
+
+PHASE 1:
+    AI provider abstraction
+    provider adapters
+    model registry
+    quota management
+    rate limiting
+    routing
+    fallback
+    observability
+
+PHASE 2:
+    AI orchestration
+    task definitions
+    structured outputs
+    context budgets
+    request lifecycle
+
+PHASE 3:
+    content retrieval
+    content generation
+    validation
+    review
+    repair
+    versioning
+    persistent content library
+
+PHASE 4:
+    curriculum state
+    learner model
+    evidence model
+    session state
+
+PHASE 5:
+    memory system
+    session memory
+    historical retrieval
+    learner memory
+    tutor experience memory
+
+PHASE 6:
+    tutor reasoning engine
+    evidence interpretation
+    hypothesis management
+    clarification
+    intervention selection
+    outcome evaluation
+
+PHASE 7:
+    session controller
+    daily planning
+    session opening
+    active tutoring
+    session closing
+    handoff generation
+
+PHASE 8:
+    evaluation
+    tutor decision auditing
+    quality measurement
+    failure analysis
+    cost/outcome analysis
+
+============================================================
+61. WHAT YOU MUST PRODUCE BEFORE CODING
+============================================================
+
+Before writing implementation code, produce:
+
+1. Detailed component architecture.
+
+2. Responsibility of every component.
+
+3. Interfaces between components.
+
+4. State models.
+
+5. Data models.
+
+6. AI request/response contracts.
+
+7. Provider adapter contract.
+
+8. Model routing policy.
+
+9. Quota and fallback strategy.
+
+10. Content-generation lifecycle.
+
+11. Content-review lifecycle.
+
+12. Learner-model design.
+
+13. Memory architecture.
+
+14. Tutor reasoning lifecycle.
+
+15. Hypothesis/clarification model.
+
+16. Session state machine.
+
+17. Daily planning lifecycle.
+
+18. Session report/handoff model.
+
+19. Tutor decision audit model.
+
+20. Error/failure handling.
+
+21. Caching strategy.
+
+22. Context compilation strategy.
+
+23. Observability strategy.
+
+24. Test strategy.
+
+25. Example end-to-end flows for the scenarios above.
+
+Do not begin implementation until these contracts are coherent.
+
+============================================================
+62. FINAL DESIGN TEST
+============================================================
+
+Before considering the AI subsystem correctly designed, prove that the architecture can handle this complete sequence:
+
+Day 1:
+    tutor begins teaching.
+
+During teaching:
+    tutor asks questions.
+    learner answers.
+    tutor updates understanding.
+
+Learner gets stuck:
+    tutor diagnoses rather than immediately giving an answer.
+
+Tutor sees repeated mistakes:
+    tutor forms multiple possible explanations.
+
+Learner provides additional context:
+    tutor changes its interpretation.
+
+Tutor tries an intervention:
+    intervention fails.
+
+Tutor recognizes failure:
+    changes strategy.
+
+Session ends:
+    system records what happened,
+    what was learned,
+    what remains uncertain,
+    what the tutor got wrong,
+    and what should happen next.
+
+Day 2:
+    tutor retrieves yesterday's report.
+
+Tutor asks learner what they remember.
+
+Learner partially remembers.
+
+Tutor identifies the exact retained/missing pieces.
+
+Tutor connects today's lesson to yesterday's lesson.
+
+During today's lesson:
+    learner asks a historical question.
+
+Tutor retrieves the relevant historical event.
+
+Learner claims:
+    "We already learned this."
+
+Tutor checks history and determines:
+    related concept was learned,
+    but this exact concept was not.
+
+Tutor explains why the current topic is different.
+
+Later:
+    provider quota is exhausted.
+
+System switches provider.
+
+Background generation is paused.
+
+Live tutoring continues.
+
+Weeks later:
+    a previous tutor diagnosis is discovered to have been wrong.
+
+System preserves the original decision,
+records the correction,
+and allows future reasoning to use that experience.
+
+If the architecture cannot support this sequence cleanly,
+the architecture is incomplete.
+
+============================================================
+63. FINAL REQUIREMENT
+============================================================
+
+Think of this system as:
+
+    a persistent reasoning tutor
+    operating over a long-running learner relationship,
+    using AI as one reasoning component,
+    backed by persistent memory,
+    curriculum state,
+    evidence,
+    verification,
+    content,
+    provider infrastructure,
+    and feedback.
+
+Do not optimize for making the chatbot sound human.
+
+Optimize for making the tutoring process behave intelligently.
+
+The final system should be able to distinguish:
+
+    what happened
+    from
+    what it thinks happened
+
+and distinguish:
+
+    what the learner said
+    from
+    what the system verified
+
+and distinguish:
+
+    what the tutor currently believes
+    from
+    what is actually known
+
+and distinguish:
+
+    what the tutor planned
+    from
+    what actually happened
+
+and distinguish:
+
+    a learner problem
+    from
+    an environmental problem
+
+and distinguish:
+
+    a local failure
+    from
+    a root learning problem
+
+and distinguish:
+
+    temporary confusion
+    from
+    persistent misconception
+
+and distinguish:
+
+    recognition
+    from
+    understanding
+
+and distinguish:
+
+    understanding
+    from
+    independent application
+
+and distinguish:
+
+    immediate success
+    from
+    retained learning.
+
+This distinction is the foundation of the entire AI subsystem.
