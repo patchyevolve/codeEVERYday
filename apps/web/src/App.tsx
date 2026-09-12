@@ -7,6 +7,7 @@ import SessionPage from "./pages/SessionPage.js";
 import TaskPage from "./pages/TaskPage.js";
 import Settings from "./pages/Settings.js";
 import GraphPage from "./pages/GraphPage.js";
+import ProvidersPage from "./pages/ProvidersPage.js";
 
 function ProtectedLayout() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/tasks/:id" element={<TaskPage />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/graph" element={<GraphPage />} />
+        <Route path="/admin/providers" element={<ProvidersPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

@@ -110,6 +110,49 @@ async function safeRequest<T>(path: string, opts?: RequestInit): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+export interface ProviderModel {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  outputLimit?: number;
+}
+
+export interface AIProvider {
+  id: string;
+  providerType: string;
+  displayName: string;
+  baseUrl: string;
+  apiKeyMasked: string | null;
+  hasApiKey: boolean;
+  enabled: boolean;
+  priority: number;
+  config: Record<string, unknown>;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AIProviderModel {
+  id: string;
+  providerId: string;
+  modelId: string;
+  displayName: string;
+  capabilities: Record<string, unknown>;
+  contextWindow: number;
+  outputLimit: number;
+  costPer1kIn: number;
+  costPer1kOut: number;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  latencyMs: number;
+  error?: string;
+  models?: ProviderModel[];
+}
+
 export const api = {
   register: (data: { email: string; name: string; password: string }) =>
     safeRequest<{ user: User }>("/auth/register", { method: "POST", body: JSON.stringify(data) }),
@@ -150,4 +193,47 @@ export const api = {
 
   notifications: (signal?: AbortSignal) =>
     safeRequest<{ notifications: Notification[] }>("/notifications", { signal }),
+
+  // Admin: AI Provider Management
+  listProviders: (signal?: AbortSignal) =>
+    safeRequest<{ providers: AIProvider[] }>("/admin/providers", { signal }),
+
+  createProvider: (data: {
+    providerType: string;
+    displayName: string;
+    baseUrl: string;
+    apiKey?: string;
+    enabled?: boolean;
+    priority?: number;
+    config?: Record<string, unknown>;
+  }) =>
+    safeRequest<AIProvider>("/admin/providers", { method: "POST", body: JSON.stringify(data) }),
+
+  updateProvider: (id: string, data: {
+    displayName?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    enabled?: boolean;
+    priority?: number;
+    config?: Record<string, unknown>;
+  }) =>
+    safeRequest<AIProvider>(`/admin/providers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+
+  deleteProvider: (id: string) =>
+    safeRequest<{ ok: true }>(`/admin/providers/${id}`, { method: "DELETE" }),
+
+  testProvider: (data: { providerType: string; baseUrl: string; apiKey?: string }) =>
+    safeRequest<ConnectionTestResult>("/admin/providers/test", { method: "POST", body: JSON.stringify(data) }),
+
+  fetchProviderModels: (id: string) =>
+    safeRequest<{ models: ProviderModel[] }>(`/admin/providers/${id}/models`, { method: "POST" }),
+
+  listProviderModels: (id: string, signal?: AbortSignal) =>
+    safeRequest<{ models: AIProviderModel[] }>(`/admin/providers/${id}/models`, { signal }),
+
+  toggleProviderModel: (providerId: string, modelId: string, enabled: boolean) =>
+    safeRequest<{ ok: true }>(`/admin/providers/${providerId}/models/${modelId}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    }),
 };

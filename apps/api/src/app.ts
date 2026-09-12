@@ -25,13 +25,18 @@ import {
   executions,
   mistakes,
   userLearningPath,
+  aiProviders,
+  aiProviderModels,
   hashPassword,
   verifyPassword,
+  encrypt,
+  decrypt,
+  maskKey,
   todayLocal,
   createPool,
   type ContentPayload
 } from "@cpd/core";
-import { createContainer, buildLearnerProfile, evaluateSubmission, debugAssist, type Container } from "@cpd/ai";
+import { createContainer, buildLearnerProfile, evaluateSubmission, debugAssist, testProviderConnection, fetchProviderModels, AIProviderRepository, type Container } from "@cpd/ai";
 import type { DB } from "@cpd/core";
 import { currentUserId, setSessionCookie, clearSessionCookie } from "./auth.js";
 import { sanitizePayload } from "./sanitize.js";
@@ -498,6 +503,196 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     else out.push({ kind: "SESSION", message: "Today's session is waiting for you." });
 
     return { notifications: out };
+  });
+
+  /* ─── Admin: AI Provider Management ─────────────────────────── */
+
+  const providerRepo = new AIProviderRepository(db);
+  const encSecret = process.env.API_SESSION_SECRET ?? "";
+
+  async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
+    const userId = currentUserId(req);
+    if (!userId) {
+      reply.code(401).send({ error: "unauthorized" });
+      return null;
+    }
+    // Super user = first registered user
+    const [first] = await db.select({ id: users.id }).from(users).orderBy(users.createdAt).limit(1);
+    if (!first || first.id !== userId) {
+      reply.code(403).send({ error: "admin access required" });
+      return null;
+    }
+    return userId;
+  }
+
+  // GET /api/admin/providers — list all providers
+  app.get("/api/admin/providers", async (req, reply) => {
+    const userId = await requireAdmin(req, reply);
+    if (!userId) return;
+
+    const providers = await providerRepo.findAll();
+    // Mask API keys — never return full keys to frontend
+    return {
+      providers: providers.map((p) => ({
+        ...p,
+        apiKeyMasked: p.apiKeyEncrypted ? maskKey(decrypt(p.apiKeyEncrypted, encSecret)) : null,
+        hasApiKey: !!p.apiKeyEncrypted,
+      })),
+    };
+  });
+
+  // POST /api/admin/providers — create a new provider
+  app.post("/api/admin/providers", async (req, reply) => {
+    const userId = await requireAdmin(req, reply);
+    if (!userId) return;
+
+    const schema = z.object({
+      providerType: z.enum(["openai", "anthropic", "gemini", "ollama", "openai_compatible", "custom"]),
+      displayName: z.string().min(1).max(100),
+      baseUrl: z.string().url(),
+      apiKey: z.string().optional(),
+      enabled: z.boolean().optional(),
+      priority: z.number().int().optional(),
+      config: z.record(z.unknown()).optional(),
+    });
+
+    const body = schema.parse(req.body);
+    const encrypted = body.apiKey ? encrypt(body.apiKey, encSecret) : null;
+
+    const provider = await providerRepo.create({
+      providerType: body.providerType,
+      displayName: body.displayName,
+      baseUrl: body.baseUrl,
+      apiKeyEncrypted: encrypted,
+      enabled: body.enabled ?? true,
+      priority: body.priority ?? 0,
+      config: body.config ?? {},
+      createdBy: userId,
+    });
+
+    return {
+      ...provider,
+      apiKeyMasked: provider.apiKeyEncrypted ? maskKey(body.apiKey ?? "") : null,
+      hasApiKey: !!provider.apiKeyEncrypted,
+    };
+  });
+
+  // PUT /api/admin/providers/:id — update a provider
+  app.put("/api/admin/providers/:id", async (req, reply) => {
+    const userId = await requireAdmin(req, reply);
+    if (!userId) return;
+
+    const { id } = req.params as { id: string };
+    const existing = await providerRepo.findById(id);
+    if (!existing) {
+      return reply.code(404).send({ error: "provider not found" });
+    }
+
+    const schema = z.object({
+      displayName: z.string().min(1).max(100).optional(),
+      baseUrl: z.string().url().optional(),
+      apiKey: z.string().optional(),
+      enabled: z.boolean().optional(),
+      priority: z.number().int().optional(),
+      config: z.record(z.unknown()).optional(),
+    });
+
+    const body = schema.parse(req.body);
+    const updates: Record<string, unknown> = { ...body };
+    if (body.apiKey !== undefined) {
+      updates.apiKeyEncrypted = body.apiKey ? encrypt(body.apiKey, encSecret) : null;
+      delete updates.apiKey;
+    }
+
+    const provider = await providerRepo.update(id, updates as any);
+    return {
+      ...provider,
+      apiKeyMasked: provider?.apiKeyEncrypted ? maskKey(body.apiKey ?? "existing") : null,
+      hasApiKey: !!provider?.apiKeyEncrypted,
+    };
+  });
+
+  // DELETE /api/admin/providers/:id — delete a provider
+  app.delete("/api/admin/providers/:id", async (req, reply) => {
+    const userId = await requireAdmin(req, reply);
+    if (!userId) return;
+
+    const { id } = req.params as { id: string };
+    const deleted = await providerRepo.delete(id);
+    if (!deleted) {
+      return reply.code(404).send({ error: "provider not found" });
+    }
+    return { ok: true };
+  });
+
+  // POST /api/admin/providers/test — test connection to a provider
+  app.post("/api/admin/providers/test", async (req, reply) => {
+    const userId = await requireAdmin(req, reply);
+    if (!userId) return;
+
+    const schema = z.object({
+      providerType: z.enum(["openai", "anthropic", "gemini", "ollama", "openai_compatible", "custom"]),
+      baseUrl: z.string().url(),
+      apiKey: z.string().optional(),
+    });
+
+    const body = schema.parse(req.body);
+    const result = await testProviderConnection(body.providerType, body.baseUrl, body.apiKey ?? null);
+    return result;
+  });
+
+  // POST /api/admin/providers/:id/models — fetch models from a provider
+  app.post("/api/admin/providers/:id/models", async (req, reply) => {
+    const userId = await requireAdmin(req, reply);
+    if (!userId) return;
+
+    const { id } = req.params as { id: string };
+    const provider = await providerRepo.findById(id);
+    if (!provider) {
+      return reply.code(404).send({ error: "provider not found" });
+    }
+
+    const apiKey = provider.apiKeyEncrypted ? decrypt(provider.apiKeyEncrypted, encSecret) : null;
+    const models = await fetchProviderModels(provider.providerType, provider.baseUrl, apiKey);
+
+    // Save models to DB
+    await providerRepo.upsertModels(
+      id,
+      models.map((m) => ({
+        modelId: m.id,
+        displayName: m.name,
+        contextWindow: m.contextWindow,
+        outputLimit: m.outputLimit,
+      })),
+    );
+
+    return { models };
+  });
+
+  // PUT /api/admin/providers/:id/models/:modelId — toggle model enabled
+  app.put("/api/admin/providers/:id/models/:modelId", async (req, reply) => {
+    const userId = await requireAdmin(req, reply);
+    if (!userId) return;
+
+    const { id, modelId } = req.params as { id: string; modelId: string };
+    const body = z.object({ enabled: z.boolean() }).parse(req.body);
+
+    await db
+      .update(aiProviderModels)
+      .set({ enabled: body.enabled })
+      .where(and(eq(aiProviderModels.providerId, id), eq(aiProviderModels.modelId, modelId)));
+
+    return { ok: true };
+  });
+
+  // GET /api/admin/providers/:id/models — list saved models
+  app.get("/api/admin/providers/:id/models", async (req, reply) => {
+    const userId = await requireAdmin(req, reply);
+    if (!userId) return;
+
+    const { id } = req.params as { id: string };
+    const models = await providerRepo.findModelsByProviderId(id);
+    return { models };
   });
 
   app.setErrorHandler((err: Error & { statusCode?: number; validation?: unknown }, _req, reply) => {

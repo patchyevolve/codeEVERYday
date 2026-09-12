@@ -7,3 +7,4 @@ export * from "./lib/review.js";
 export * from "./lib/difficulty.js";
 export * from "./lib/password.js";
 export * from "./lib/streak.js";
+export * from "./lib/crypto.js";

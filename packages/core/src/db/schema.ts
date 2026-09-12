@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid
 } from "drizzle-orm/pg-core";
 
@@ -722,6 +723,61 @@ export const providerState = pgTable(
     lastResetAt: timestamp("last_reset_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   }
+);
+
+/* ------------------------------------------------------------------ */
+/* AI Provider Configuration                                           */
+/* ------------------------------------------------------------------ */
+
+export const aiProviders = pgTable(
+  "ai_providers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerType: text("provider_type").notNull(), // openai | anthropic | gemini | ollama | openai_compatible | custom
+    displayName: text("display_name").notNull(),
+    baseUrl: text("base_url").notNull(),
+    apiKeyEncrypted: text("api_key_encrypted"), // AES-256-GCM encrypted, null for ollama
+    enabled: boolean("enabled").notNull().default(true),
+    priority: integer("priority").notNull().default(0), // lower = higher priority
+    config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("ai_providers_type_idx").on(t.providerType),
+    index("ai_providers_enabled_idx").on(t.enabled),
+  ]
+);
+
+export const aiProviderModels = pgTable(
+  "ai_provider_models",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: uuid("provider_id")
+      .notNull()
+      .references(() => aiProviders.id, { onDelete: "cascade" }),
+    modelId: text("model_id").notNull(),
+    displayName: text("display_name").notNull(),
+    capabilities: jsonb("capabilities")
+      .$type<{
+        vision?: boolean;
+        functionCalling?: boolean;
+        jsonMode?: boolean;
+        streaming?: boolean;
+      }>()
+      .notNull()
+      .default({}),
+    contextWindow: integer("context_window").notNull().default(4096),
+    outputLimit: integer("output_limit").notNull().default(4096),
+    costPer1kIn: real("cost_per_1k_in").notNull().default(0),
+    costPer1kOut: real("cost_per_1k_out").notNull().default(0),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ai_provider_models_provider_model_idx").on(t.providerId, t.modelId),
+  ]
 );
 
 /* ------------------------------------------------------------------ */

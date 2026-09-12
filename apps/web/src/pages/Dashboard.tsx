@@ -138,6 +138,12 @@ export default function Dashboard() {
           >
             Knowledge Graph
           </Link>
+          <Link
+            to="/admin/providers"
+            className="flex-1 bg-white rounded-lg shadow-sm p-4 text-center text-sm text-gray-700 hover:bg-gray-50"
+          >
+            AI Providers
+          </Link>
         </nav>
       </main>
     </div>
