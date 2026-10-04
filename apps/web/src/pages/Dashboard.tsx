@@ -4,14 +4,18 @@ import { api, type WeakConcept } from "../lib/api.js";
 import { useAuth } from "../hooks/useAuth.js";
 import PageHeader from "../components/PageHeader.js";
 import LoadingState from "../components/LoadingState.js";
+import type { Notification } from "../lib/api.js";
 
 export default function Dashboard() {
   const { user, streak, logout } = useAuth();
   const [weak, setWeak] = useState<WeakConcept[]>([]);
   const [today, setToday] = useState<{ id: string; kind: string; status: string; plannedMinutes: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifs, setShowNotifs] = useState(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -36,6 +40,14 @@ export default function Dashboard() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const ctrl = new AbortController();
+    api.notifications(ctrl.signal).then((data) => {
+      if (!ctrl.signal.aborted) setNotifications(data.notifications);
+    }).catch(() => {});
+    return () => ctrl.abort();
+  }, []);
+
   if (loading) return <LoadingState label="Loading dashboard..." />;
   if (error) {
     return (
@@ -56,6 +68,19 @@ export default function Dashboard() {
     logout();
   };
 
+  const handleGenerateSession = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const data = await api.today();
+      setToday(data.session);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate session");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <PageHeader
@@ -67,6 +92,32 @@ export default function Dashboard() {
             <button onClick={handleLogout} className="text-sm text-red-600 hover:underline">
               Logout
             </button>
+            <div className="relative">
+              <button onClick={() => setShowNotifs(!showNotifs)} className="text-sm text-gray-500 hover:text-gray-700 relative">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+                </svg>
+                {notifications.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
+                    {notifications.length}
+                  </span>
+                )}
+              </button>
+              {showNotifs && (
+                <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-72 z-50">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">Notifications</p>
+                  {notifications.length === 0 ? (
+                    <p className="text-xs text-gray-400">No notifications</p>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {notifications.map((n, i) => (
+                        <p key={i} className="text-xs text-gray-600">{n.message}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         }
       />
@@ -100,8 +151,14 @@ export default function Dashboard() {
           </Link>
         ) : (
           <div className="bg-white rounded-lg shadow-sm p-6 text-center">
-            <p className="text-gray-500 mb-2">No session today</p>
-            <p className="text-xs text-gray-400">Come back tomorrow for your next practice session.</p>
+            <p className="text-gray-500 mb-4">No session today</p>
+            <button
+              onClick={handleGenerateSession}
+              disabled={generating}
+              className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 text-sm font-medium disabled:opacity-50"
+            >
+              {generating ? "Generating..." : "Start Today's Session"}
+            </button>
           </div>
         )}
 
@@ -139,7 +196,7 @@ export default function Dashboard() {
             Knowledge Graph
           </Link>
           <Link
-            to="/admin/providers"
+            to="/providers"
             className="flex-1 bg-white rounded-lg shadow-sm p-4 text-center text-sm text-gray-700 hover:bg-gray-50"
           >
             AI Providers

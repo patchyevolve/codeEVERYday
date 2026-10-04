@@ -3,10 +3,8 @@ import {
   api,
   type AIProvider,
   type AIProviderModel,
-  type ProviderModel,
   type ConnectionTestResult,
 } from "../lib/api.js";
-import { useAuth } from "../hooks/useAuth.js";
 import PageHeader from "../components/PageHeader.js";
 import LoadingState from "../components/LoadingState.js";
 
@@ -36,7 +34,6 @@ const EMPTY_FORM: ProviderForm = {
 };
 
 export default function ProvidersPage() {
-  const { user } = useAuth();
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +46,6 @@ export default function ProvidersPage() {
   const [fetchingModels, setFetchingModels] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [models, setModels] = useState<AIProviderModel[]>([]);
-  const [loadingModels, setLoadingModels] = useState(false);
 
   const loadProviders = useCallback(async () => {
     try {
@@ -159,7 +155,7 @@ export default function ProvidersPage() {
   const handleFetchModels = async (providerId: string) => {
     setFetchingModels(true);
     try {
-      const result = await api.fetchProviderModels(providerId);
+      await api.fetchProviderModels(providerId);
       setSelectedProvider(providerId);
       // Reload models from DB
       const data = await api.listProviderModels(providerId);
@@ -168,19 +164,6 @@ export default function ProvidersPage() {
       setError(err instanceof Error ? err.message : "Failed to fetch models");
     } finally {
       setFetchingModels(false);
-    }
-  };
-
-  const handleLoadModels = async (providerId: string) => {
-    setLoadingModels(true);
-    try {
-      const data = await api.listProviderModels(providerId);
-      setModels(data.models);
-      setSelectedProvider(providerId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load models");
-    } finally {
-      setLoadingModels(false);
     }
   };
 
@@ -258,9 +241,9 @@ export default function ProvidersPage() {
                     </label>
                   </div>
 
-                  <div className="space-y-1 text-xs text-gray-500 mb-4">
+                  <div className="space-y-1 text-xs text-gray-500 mb-4 overflow-hidden">
                     <p className="truncate" title={provider.baseUrl}>{provider.baseUrl}</p>
-                    <p>API Key: {provider.hasApiKey ? `✓ ${provider.apiKeyMasked}` : "✗ Not set"}</p>
+                    <p className="truncate" title={provider.apiKeyMasked ?? "Not set"}>API Key: {provider.hasApiKey ? `✓ ${provider.apiKeyMasked}` : "✗ Not set"}</p>
                     <p>Priority: {provider.priority}</p>
                   </div>
 
@@ -306,9 +289,7 @@ export default function ProvidersPage() {
               </button>
             </div>
 
-            {loadingModels ? (
-              <LoadingState label="Loading models..." />
-            ) : models.length === 0 ? (
+            {models.length === 0 ? (
               <p className="text-sm text-gray-500">No models found. Click "Fetch Models" to discover available models.</p>
             ) : (
               <div className="overflow-x-auto">
@@ -396,6 +377,7 @@ export default function ProvidersPage() {
                       type="text"
                       value={form.displayName}
                       onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+                      autoComplete="off"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                       placeholder="My OpenAI Provider"
                     />
@@ -409,6 +391,7 @@ export default function ProvidersPage() {
                       type="url"
                       value={form.baseUrl}
                       onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                      autoComplete="off"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm font-mono"
                       placeholder="https://api.openai.com/v1"
                     />
@@ -424,6 +407,7 @@ export default function ProvidersPage() {
                       type="password"
                       value={form.apiKey}
                       onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
+                      autoComplete="new-password"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm font-mono"
                       placeholder={form.providerType === "ollama" ? "Not required for Ollama" : "sk-..."}
                       disabled={form.providerType === "ollama"}

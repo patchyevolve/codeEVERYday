@@ -108,6 +108,7 @@ export class ReasoningRepository {
     action: string;
     confidence?: number;
     expectedOutcome?: string;
+    riskLevel?: string;
   }): Promise<TutorDecisionRecord> {
     const [row] = await this.db
       .insert(tutorDecisions)
@@ -120,6 +121,7 @@ export class ReasoningRepository {
         action: values.action,
         confidence: values.confidence ?? 0.5,
         expectedOutcome: values.expectedOutcome ?? null,
+        riskLevel: values.riskLevel ?? "low",
       })
       .returning();
     return row as TutorDecisionRecord;

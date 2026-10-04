@@ -16,7 +16,7 @@ export default function Register() {
     setLoading(true);
     try {
       await api.register({ name, email, password });
-      navigate("/dashboard", { replace: true });
+      navigate("/onboarding", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {

@@ -20,6 +20,12 @@ export function executorUrl(): string {
   return process.env.EXECUTOR_URL ?? "http://localhost:4100";
 }
 
+/** Shared secret between callers and the executor's /execute endpoint. */
+export function executorAuthHeaders(): Record<string, string> {
+  const token = process.env.EXECUTOR_AUTH_TOKEN;
+  return token && token.length > 0 ? { "x-executor-token": token } : {};
+}
+
 export async function executeCode(
   language: ExecutorLanguage,
   code: string,
@@ -33,7 +39,7 @@ export async function executeCode(
   try {
     const res = await fetch(`${executorUrl()}/execute`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...executorAuthHeaders() },
       body: JSON.stringify({ language, code, harness, testCases, timeoutMs, memoryMb }),
       signal: controller.signal
     });

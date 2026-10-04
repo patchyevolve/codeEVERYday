@@ -1,4 +1,5 @@
 import { MemoryRepository } from "./repositories/memory-repository.js";
+import { VectorStore } from "./vector-store.js";
 import type {
   MemorySystem,
   MemoryQuery,
@@ -9,7 +10,11 @@ import type {
 } from "./contracts.js";
 
 export class MemorySystemImpl implements MemorySystem {
-  constructor(private readonly repo: MemoryRepository) {}
+  private readonly vectorStore: VectorStore;
+
+  constructor(private readonly repo: MemoryRepository) {
+    this.vectorStore = new VectorStore();
+  }
 
   /* ------------------------------------------------------------------ */
   /* Record methods                                                       */
@@ -85,10 +90,7 @@ export class MemorySystemImpl implements MemorySystem {
       case "CONCEPT_INDEX":
         return this.queryConceptIndex(q);
       case "SEMANTIC":
-        // SEMANTIC retrieval requires vector embeddings which are not yet implemented.
-        // Falls back to concept-index keyword search as a temporary measure.
-        // Future: integrate pgvector or external embedding service for true semantic search.
-        return this.queryConceptIndex(q);
+        return this.querySemantic(q);
       case "CURRENT_STATE":
         return this.queryCurrentState(q);
       default:
@@ -150,6 +152,54 @@ export class MemorySystemImpl implements MemorySystem {
       },
       score: 0.8,
     }));
+  }
+
+  private async querySemantic(q: MemoryQuery): Promise<MemoryHit[]> {
+    const limit = q.limit ?? 20;
+    const text = q.text ?? q.concept ?? "";
+
+    if (!text) return [];
+
+    const results = await this.vectorStore.search(text, {
+      limit,
+      minScore: 0.2,
+    });
+
+    return results.map((r) => ({
+      id: r.document.id,
+      store: r.document.store as MemoryHit["store"],
+      kind: r.document.kind,
+      data: {
+        ...r.document.metadata,
+        content: r.document.content,
+      },
+      score: r.score,
+      date: r.document.metadata.date as string | undefined,
+    }));
+  }
+
+  /** Index existing memory entries into the vector store for semantic search. */
+  async buildIndex(): Promise<void> {
+    const evidence = await this.repo.findEvidenceByUser("", undefined, 500);
+    if (evidence.length > 0) {
+      await this.vectorStore.addDocuments(
+        evidence.map((e) => ({
+          id: e.id,
+          store: "historical",
+          kind: "evidence_event",
+          content: [e.concept, e.type, e.result, JSON.stringify(e.payload)].filter(Boolean).join(" "),
+          metadata: {
+            userId: e.userId,
+            sessionId: e.sessionId,
+            type: e.type,
+            concept: e.concept,
+            result: e.result,
+            source: e.source,
+            observedAt: e.observedAt,
+          },
+        })),
+      );
+    }
   }
 
   private async queryCurrentState(q: MemoryQuery): Promise<MemoryHit[]> {

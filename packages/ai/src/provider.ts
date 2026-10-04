@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { StreamingProvider } from "./streaming-provider.js";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -28,6 +29,7 @@ export interface AIProvider {
   readonly name: string;
   readonly configured: boolean;
   chat(messages: ChatMessage[], opts?: CompletionOptions): Promise<string>;
+  chatStream?(messages: ChatMessage[], opts?: CompletionOptions): AsyncIterable<string>;
 }
 
 export class ProviderError extends Error {
@@ -50,23 +52,35 @@ export function aiConfig() {
 }
 
 class OpenAICompatibleProvider implements AIProvider {
-  readonly name = `openai-compatible:${env.model}`;
+  readonly name: string;
   readonly configured = true;
+  private baseUrl: string;
+  private apiKey: string;
+  private model: string;
+  private timeoutMs: number;
+
+  constructor(baseUrl: string, apiKey: string, model: string, timeoutMs: number) {
+    this.baseUrl = baseUrl;
+    this.apiKey = apiKey;
+    this.model = model;
+    this.timeoutMs = timeoutMs;
+    this.name = `openai-compatible:${model}`;
+  }
 
   async chat(messages: ChatMessage[], opts: CompletionOptions = {}): Promise<string> {
-    const url = `${env.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    const url = `${this.baseUrl.replace(/\/$/, "")}/chat/completions`;
     const controller = new AbortController();
-    const timeoutMs = opts.timeoutMs ?? env.timeoutMs;
+    const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${env.apiKey}`
+          Authorization: `Bearer ${this.apiKey}`
         },
         body: JSON.stringify({
-          model: env.model,
+          model: this.model,
           messages,
           temperature: opts.temperature ?? 0.4,
           max_tokens: opts.maxTokens ?? 4096,
@@ -92,6 +106,19 @@ class OpenAICompatibleProvider implements AIProvider {
       clearTimeout(timeout);
     }
   }
+
+  async *chatStream(messages: ChatMessage[], opts: CompletionOptions = {}): AsyncIterable<string> {
+    const streaming = new StreamingProvider({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      model: this.model,
+      providerType: "openai",
+      timeoutMs: opts.timeoutMs ?? this.timeoutMs,
+    });
+    for await (const chunk of streaming.stream(messages, opts)) {
+      if (chunk.content) yield chunk.content;
+    }
+  }
 }
 
 class NullProvider implements AIProvider {
@@ -107,9 +134,21 @@ let _provider: AIProvider | null = null;
 
 export function getProvider(): AIProvider {
   if (!_provider) {
-    _provider = env.enabled && env.baseUrl && env.apiKey ? new OpenAICompatibleProvider() : new NullProvider();
+    _provider = env.enabled && env.baseUrl && env.apiKey
+      ? new OpenAICompatibleProvider(env.baseUrl, env.apiKey, env.model, env.timeoutMs)
+      : new NullProvider();
   }
   return _provider;
+}
+
+/** Replace the global provider (e.g., after loading DB-configured providers). */
+export function setProvider(provider: AIProvider): void {
+  _provider = provider;
+}
+
+/** Create an OpenAI-compatible provider with explicit config. */
+export function createOpenAIProvider(baseUrl: string, apiKey: string, model: string, timeoutMs = 90_000): AIProvider {
+  return new OpenAICompatibleProvider(baseUrl, apiKey, model, timeoutMs);
 }
 
 /** Reset cached provider (used in tests). */

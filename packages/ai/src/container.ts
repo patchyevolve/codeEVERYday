@@ -29,7 +29,9 @@ import { NodeRepository } from "./repositories/node-repository.js";
 import { SessionRepository } from "./repositories/session-repository.js";
 import { UserRepository } from "./repositories/user-repository.js";
 import { ReasoningRepository, EvidenceRepository } from "./repositories/index.js";
-import { getProvider, type AIProvider } from "./provider.js";
+import { getProvider, setProvider, createOpenAIProvider, type AIProvider } from "./provider.js";
+import { AIProviderRepository } from "./repositories/ai-provider-repository.js";
+import type { ProviderConfig } from "./contracts.js";
 import { SubmissionRepository } from "./repositories/submission-repository.js";
 import { StreakRepository } from "./repositories/streak-repository.js";
 import { ProviderStateRepository } from "./repositories/provider-state-repository.js";
@@ -70,6 +72,7 @@ export interface Container {
   readonly learnerDimensionRepo: LearnerDimensionRepository;
   loadProviderState(): Promise<void>;
   saveProviderState(): Promise<void>;
+  loadDBProviders(dbProviders: ProviderConfig[]): void;
 }
 
 export function createContainer(db: DB): Container {
@@ -265,6 +268,27 @@ export function createContainer(db: DB): Container {
           requestsToday: quotaStatus.rpd.used,
           tokensToday: quotaStatus.tpd.used,
         });
+      }
+    },
+
+    /**
+     * Load DB-configured providers into the registry and set the global
+     * provider to the highest-priority enabled one. Called at API startup
+     * after decrypting API keys.
+     */
+    loadDBProviders(dbProviders: ProviderConfig[]) {
+      for (const config of dbProviders) {
+        c.registry.registerProvider(config);
+      }
+      const enabled = c.registry.listProviders();
+      if (enabled.length > 0) {
+        const best = enabled[0]!;
+        const model = best.models.find((m) => m.enabled) ?? best.models[0];
+        if (model && best.apiKey) {
+          const p = createOpenAIProvider(best.baseUrl, best.apiKey, model.modelId);
+          setProvider(p);
+          console.log(`[container] loaded provider "${best.displayName}" with model ${model.modelId}`);
+        }
       }
     },
   };

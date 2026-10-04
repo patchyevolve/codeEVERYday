@@ -60,6 +60,29 @@ export function clamp(v: number, lo = 0, hi = 1): number {
 }
 
 /**
+ * Check if an evidence event represents an environmental issue (wrong IDE,
+ * missing tool, setup problem, etc.) rather than learner performance.
+ * Environmental issues should be excluded from dimension calculations but
+ * still recorded for tracking purposes.
+ */
+export function isEnvironmentalIssue(evidence: EvidenceEvent): boolean {
+  const payload = evidence.payload;
+  if (payload.environmentalIssue === true) return true;
+  if (typeof payload.reason === "string") {
+    const envReasons = [
+      "wrong_ide",
+      "missing_tool",
+      "setup_problem",
+      "environment_issue",
+      "tool_unavailable",
+      "configuration_error",
+    ];
+    if (envReasons.includes(payload.reason)) return true;
+  }
+  return false;
+}
+
+/**
  * EMA-style update: new = old + α × (target − old).
  * Returns [newValue, newConfidence].
  */
@@ -332,6 +355,13 @@ export async function applyEvidence(
     }
 
     for (const event of evidence) {
+      // Environmental issues (wrong IDE, missing tool, setup problems) should
+      // not affect dimension calculations. Record the event for tracking but
+      // skip dimension updates.
+      if (isEnvironmentalIssue(event)) {
+        continue;
+      }
+
       const deltas = mapEvidenceToDimensions(event, current);
 
       for (const delta of deltas) {
@@ -358,7 +388,10 @@ export async function applyEvidence(
       }
     }
 
-    const indDelta = computeIndependence(evidence, current);
+    const nonEnvironmentalEvidence = evidence.filter(
+      (e) => !isEnvironmentalIssue(e)
+    );
+    const indDelta = computeIndependence(nonEnvironmentalEvidence, current);
     {
       const cur = current.get("independence") ?? {
         value: 0,

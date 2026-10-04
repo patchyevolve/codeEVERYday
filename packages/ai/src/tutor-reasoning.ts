@@ -182,6 +182,7 @@ export async function recordDecision(
     action: decision.action as string,
     confidence: decision.confidence,
     expectedOutcome: decision.expectedOutcome,
+    riskLevel: decision.riskLevel ?? "low",
   });
 }
 

@@ -22,6 +22,17 @@ export interface Streak {
   lastCompletedDate: string | null;
 }
 
+/** Exactly what POST /api/tasks/:id/submit returns (see packages/ai/src/evaluator.ts). */
+export interface SubmitResult {
+  verdict: "PASS" | "FAIL" | "COMPILE_ERROR" | "PARTIAL";
+  score: number;
+  feedback: string[];
+  attempt: number;
+  nodeState?: string;
+  sessionCompleted?: boolean;
+  xpEarned?: number;
+}
+
 export interface Task {
   id: string;
   kind: string;
@@ -97,9 +108,13 @@ export class ApiError extends Error {
 }
 
 async function safeRequest<T>(path: string, opts?: RequestInit): Promise<T> {
+  const hasBody = opts?.body != null;
   const res = await fetch(`${API}${path}`, {
     ...opts,
-    headers: { "Content-Type": "application/json", ...opts?.headers },
+    headers: {
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      ...opts?.headers,
+    },
     credentials: "include",
   });
   if (!res.ok) {
@@ -162,6 +177,11 @@ export const api = {
 
   logout: () => safeRequest<{ ok: true }>("/auth/logout", { method: "POST" }),
 
+  deleteAccount: () => safeRequest<{ ok: true }>("/account", { method: "DELETE" }),
+
+  onboarding: (data: { languageKey: string; timezone: string; dailyMinutes: number; goals: { domain: string; title: string; description?: string; milestones: string[] }[] }) =>
+    safeRequest<{ ok: true }>("/onboarding", { method: "POST", body: JSON.stringify(data) }),
+
   me: (signal?: AbortSignal) =>
     safeRequest<{ user: User; preferences: Preferences; streak: Streak | null }>("/me", { signal }),
 
@@ -176,11 +196,14 @@ export const api = {
   today: (signal?: AbortSignal) =>
     safeRequest<{ session: Session; tasks: Task[] }>("/today", { signal }),
 
+  session: (id: string, signal?: AbortSignal) =>
+    safeRequest<{ session: Session; tasks: Task[] }>(`/sessions/${id}`, { signal }),
+
   task: (id: string, signal?: AbortSignal) =>
     safeRequest<{ id: string; kind: string; title: string; content: unknown; attempt: number }>(`/tasks/${id}`, { signal }),
 
-  submit: (taskId: string, data: { answer?: unknown; code?: string; language?: string; hintsUsed?: number }) =>
-    safeRequest<unknown>(`/tasks/${taskId}/submit`, { method: "POST", body: JSON.stringify(data) }),
+  submit: (taskId: string, data: { answer?: unknown; code?: string; language?: string; hintsUsed?: number; completed?: boolean }) =>
+    safeRequest<SubmitResult>(`/tasks/${taskId}/submit`, { method: "POST", body: JSON.stringify(data) }),
 
   settings: (signal?: AbortSignal) =>
     safeRequest<{ preferences: Preferences }>("/settings", { signal }),
@@ -196,7 +219,7 @@ export const api = {
 
   // Admin: AI Provider Management
   listProviders: (signal?: AbortSignal) =>
-    safeRequest<{ providers: AIProvider[] }>("/admin/providers", { signal }),
+    safeRequest<{ providers: AIProvider[] }>("/providers", { signal }),
 
   createProvider: (data: {
     providerType: string;
@@ -207,7 +230,7 @@ export const api = {
     priority?: number;
     config?: Record<string, unknown>;
   }) =>
-    safeRequest<AIProvider>("/admin/providers", { method: "POST", body: JSON.stringify(data) }),
+    safeRequest<AIProvider>("/providers", { method: "POST", body: JSON.stringify(data) }),
 
   updateProvider: (id: string, data: {
     displayName?: string;
@@ -217,22 +240,22 @@ export const api = {
     priority?: number;
     config?: Record<string, unknown>;
   }) =>
-    safeRequest<AIProvider>(`/admin/providers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    safeRequest<AIProvider>(`/providers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 
   deleteProvider: (id: string) =>
-    safeRequest<{ ok: true }>(`/admin/providers/${id}`, { method: "DELETE" }),
+    safeRequest<{ ok: true }>(`/providers/${id}`, { method: "DELETE" }),
 
   testProvider: (data: { providerType: string; baseUrl: string; apiKey?: string }) =>
-    safeRequest<ConnectionTestResult>("/admin/providers/test", { method: "POST", body: JSON.stringify(data) }),
+    safeRequest<ConnectionTestResult>("/providers/test", { method: "POST", body: JSON.stringify(data) }),
 
   fetchProviderModels: (id: string) =>
-    safeRequest<{ models: ProviderModel[] }>(`/admin/providers/${id}/models`, { method: "POST" }),
+    safeRequest<{ models: ProviderModel[] }>(`/providers/${id}/models`, { method: "POST" }),
 
   listProviderModels: (id: string, signal?: AbortSignal) =>
-    safeRequest<{ models: AIProviderModel[] }>(`/admin/providers/${id}/models`, { signal }),
+    safeRequest<{ models: AIProviderModel[] }>(`/providers/${id}/models`, { signal }),
 
   toggleProviderModel: (providerId: string, modelId: string, enabled: boolean) =>
-    safeRequest<{ ok: true }>(`/admin/providers/${providerId}/models/${modelId}`, {
+    safeRequest<{ ok: true }>(`/providers/${providerId}/models/${modelId}`, {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     }),

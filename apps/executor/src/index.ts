@@ -1,6 +1,7 @@
 import "dotenv/config";
 import Fastify from "fastify";
 import { execFile } from "node:child_process";
+import { timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { generateCppHarness } from "./harness/cpp.js";
@@ -231,17 +232,49 @@ export async function ensureImage(image: string): Promise<void> {
   }
 }
 
+const TOKEN_HEADER = "x-executor-token";
+
+function executorToken(): string | null {
+  const t = process.env.EXECUTOR_AUTH_TOKEN;
+  return t && t.length > 0 ? t : null;
+}
+
+function tokenMatches(provided: unknown, expected: string): boolean {
+  if (typeof provided !== "string") return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
 export async function buildServer() {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
+
+  // The executor runs arbitrary learner code inside Docker containers, so
+  // /execute is never safe to expose unauthenticated. Fail closed in
+  // production; allow (with a loud warning) in dev so a bare `npm run dev`
+  // still works without extra setup.
+  const expectedToken = executorToken();
+  if (!expectedToken && process.env.NODE_ENV === "production") {
+    throw new Error("EXECUTOR_AUTH_TOKEN must be set when NODE_ENV=production");
+  }
+  if (!expectedToken) {
+    app.log.warn(
+      "[security] EXECUTOR_AUTH_TOKEN is unset — /execute is unauthenticated (development only)",
+    );
+  }
 
   app.get("/health", async () => {
     const useDocker = process.env.EXECUTOR_USE_DOCKER !== "false";
     const runtime = process.env.EXECUTOR_DOCKER_RUNTIME;
     const method = !useDocker ? "local" : runtime === "runsc" ? "docker-gvisor" : "docker";
-    return { ok: true, method, runtime: runtime ?? "runc" };
+    return { ok: true, method, runtime: runtime ?? "runc", authRequired: !!expectedToken };
   });
 
   app.post("/execute", async (request, reply) => {
+    if (expectedToken && !tokenMatches(request.headers[TOKEN_HEADER], expectedToken)) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
     const parsed = executeRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request", details: parsed.error.flatten() });

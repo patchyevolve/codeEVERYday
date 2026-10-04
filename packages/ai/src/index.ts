@@ -41,7 +41,17 @@ export {
   type ContentReviewIssue,
   type ContentReviewResult,
   type SessionMemory,
+  type InteractionType,
+  type QuestionPurpose,
+  type PedagogicalStrategy,
+  type DecisionRiskLevel,
+  type QuotaConfig,
+  type QuotaUsage,
+  type ContentVersion,
   priorityRank,
+  classifyDecisionRisk,
+  HIGH_RISK_ACTIONS,
+  MEDIUM_RISK_ACTIONS,
 } from "./contracts.js";
 export * from "./provider.js";
 export * from "./content.js";
@@ -73,7 +83,13 @@ export * from "./gateway/fallback.js";
 export * from "./gateway/usage-tracker.js";
 export * from "./gateway/gateway.js";
 export * from "./gateway/response-cache.js";
+export * from "./gateway/risk-classifier.js";
 export * from "./container.js";
 export * from "./repositories/index.js";
 export * from "./provider-tester.js";
+export * from "./provider-adapters.js";
+export * from "./streaming-provider.js";
+export * from "./embeddings.js";
+export * from "./vector-store.js";
 export * from "./repositories/ai-provider-repository.js";
+export * from "./quality-analytics.js";

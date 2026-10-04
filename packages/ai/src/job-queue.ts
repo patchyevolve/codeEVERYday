@@ -7,7 +7,7 @@
  * Spec reference: docs/ai-subsystem-design.md §2 (Orchestrator.enqueue)
  */
 
-import { and, eq, lte, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { aiJobs, type DB } from "@cpd/core";
 
 /* ------------------------------------------------------------------ */
@@ -46,6 +46,7 @@ export class JobQueue {
   constructor(
     private readonly db: DB,
     private readonly pollIntervalMs = 2000,
+    private readonly batchSize = 10,
   ) {}
 
   /** Register a handler for a job type. */
@@ -99,6 +100,39 @@ export class JobQueue {
     }
   }
 
+  /**
+   * Atomically claim a batch of due jobs.
+   *
+   * `FOR UPDATE SKIP LOCKED` is the standard Postgres queue pattern: each
+   * worker locks only rows it can actually take, so concurrent pollers never
+   * claim the same job and never block each other. The previous
+   * SELECT-then-UPDATE sequence let two workers pick up identical rows and run
+   * the same job twice — harmless in a single process, but guaranteed to
+   * duplicate work (and side effects) with more than one worker replica.
+   */
+  private async claimBatch(): Promise<Job[]> {
+    const rows = await this.db
+      .update(aiJobs)
+      .set({
+        status: "RUNNING",
+        startedAt: new Date(),
+        updatedAt: new Date(),
+        attempts: sql`${aiJobs.attempts} + 1`,
+      })
+      .where(sql`
+        ${aiJobs.id} in (
+          select id from ${aiJobs}
+          where ${aiJobs.status} = 'QUEUED'
+            and ${aiJobs.runAfter} <= now()
+          order by ${aiJobs.priority}, ${aiJobs.createdAt}
+          limit ${this.batchSize}
+          for update skip locked
+        )
+      `)
+      .returning();
+    return rows as unknown as Job[];
+  }
+
   /** Process one batch of pending jobs (also callable manually). */
   async poll(): Promise<number> {
     if (this.processing) return 0;
@@ -106,17 +140,7 @@ export class JobQueue {
 
     let processed = 0;
     try {
-      const pending = await this.db
-        .select()
-        .from(aiJobs)
-        .where(
-          and(
-            eq(aiJobs.status, "QUEUED"),
-            lte(aiJobs.runAfter, new Date()),
-          ),
-        )
-        .orderBy(aiJobs.priority, aiJobs.createdAt)
-        .limit(10);
+      const pending = await this.claimBatch();
 
       for (const row of pending) {
         const handler = this.handlers.get(row.jobType);
@@ -128,16 +152,9 @@ export class JobQueue {
           continue;
         }
 
-        await this.db
-          .update(aiJobs)
-          .set({
-            status: "RUNNING",
-            startedAt: new Date(),
-            attempts: row.attempts + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(aiJobs.id, row.id));
-
+        // NOTE: `row.attempts` was already incremented when the job was
+        // claimed, so failure handling below reuses it instead of adding 1
+        // again (which would burn maxAttempts twice as fast).
         try {
           const result = await handler(row.payload as never);
           await this.db
@@ -152,18 +169,17 @@ export class JobQueue {
           processed++;
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
-          const newAttempts = row.attempts + 1;
-          const failed = newAttempts >= row.maxAttempts;
+          const failed = row.attempts >= row.maxAttempts;
 
           await this.db
             .update(aiJobs)
             .set({
               status: failed ? "FAILED" : "QUEUED",
               error: errorMsg,
-              attempts: newAttempts,
+              attempts: row.attempts,
               runAfter: failed
                 ? new Date()
-                : new Date(Date.now() + this.backoffMs(newAttempts)),
+                : new Date(Date.now() + this.backoffMs(row.attempts)),
               updatedAt: new Date(),
             })
             .where(eq(aiJobs.id, row.id));

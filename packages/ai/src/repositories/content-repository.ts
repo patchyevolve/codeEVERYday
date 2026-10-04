@@ -166,4 +166,18 @@ export class ContentRepository {
       )
       .orderBy(sql`${contentItems.version} DESC`);
   }
+
+  /**
+   * Mark an existing content item as superseded by another item.
+   * Sets `supersededBy` on the old item and marks it as RETIRED.
+   */
+  async markSuperseded(
+    oldContentId: string,
+    newContentId: string,
+  ): Promise<void> {
+    await this.db
+      .update(contentItems)
+      .set({ supersededBy: newContentId, status: "RETIRED" })
+      .where(eq(contentItems.id, oldContentId));
+  }
 }

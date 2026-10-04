@@ -159,6 +159,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull(),
+  isAdmin: boolean("is_admin").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   totalXp: integer("total_xp").notNull().default(0),
   level: integer("level").notNull().default(1),
@@ -879,6 +880,7 @@ export const tutorDecisions = pgTable(
     actualOutcome: text("actual_outcome"),
     verdict: text("verdict").notNull().default("unknown"),
     correction: text("correction"),
+    riskLevel: text("risk_level").notNull().default("low"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (t) => [

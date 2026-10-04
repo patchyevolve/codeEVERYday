@@ -16,6 +16,7 @@ import type {
   Hypothesis,
   ChatMessage,
 } from "./contracts.js";
+import { classifyDecisionRisk } from "./contracts.js";
 import type { OrchestratorImpl } from "./orchestrator.js";
 import type { ReasoningRepository } from "./repositories/reasoning-repository.js";
 import type { MemoryRepository } from "./repositories/memory-repository.js";
@@ -482,6 +483,7 @@ export async function handleIncoming(
 
   const selectedHypothesis = hypotheses[0];
   if (selectedHypothesis) {
+    const riskLevel = classifyDecisionRisk(action);
     await recordDecision(deps.reasoningRepo, {
       userId: context.userId,
       sessionId: context.sessionId,
@@ -492,6 +494,7 @@ export async function handleIncoming(
       confidence,
       expectedOutcome: reason,
       verdict: "unknown",
+      riskLevel,
     });
   }
 
@@ -500,6 +503,77 @@ export async function handleIncoming(
     content,
     hypothesis: selectedHypothesis,
     evidence: [evidenceEvent],
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Root-Cause Reasoning (§33)                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Detect shared prerequisites across failing concepts (§33).
+ * When multiple concepts share a prerequisite and all are failing,
+ * the root cause is likely the prerequisite, not the individual concepts.
+ */
+export function detectSharedPrerequisites(
+  failingConcepts: string[],
+  dependencyGraph: Map<string, string[]>
+): { prerequisite: string; dependentConcepts: string[] }[] {
+  const prereqCounts = new Map<string, string[]>();
+  
+  for (const concept of failingConcepts) {
+    const prereqs = dependencyGraph.get(concept) ?? [];
+    for (const prereq of prereqs) {
+      if (!failingConcepts.includes(prereq)) {
+        const existing = prereqCounts.get(prereq) ?? [];
+        existing.push(concept);
+        prereqCounts.set(prereq, existing);
+      }
+    }
+  }
+  
+  const results: { prerequisite: string; dependentConcepts: string[] }[] = [];
+  for (const [prereq, dependents] of prereqCounts) {
+    if (dependents.length >= 2) {
+      results.push({ prerequisite: prereq, dependentConcepts: dependents });
+    }
+  }
+  
+  results.sort((a, b) => b.dependentConcepts.length - a.dependentConcepts.length);
+  return results;
+}
+
+/* ------------------------------------------------------------------ */
+/* Claim Verification (§38)                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Generate a diagnostic question to verify a learner's knowledge claim (§38).
+ * When a learner claims to understand something, we verify with a targeted question.
+ */
+export function generateDiagnosticQuestion(
+  claim: string,
+  concept: string,
+  learnerLevel: number
+): { question: string; expectedAnswer: string; purpose: "VERIFY_RECALL" | "TEST_TRANSFER" | "PROBE_DEPTH" } {
+  if (learnerLevel < 0.3) {
+    return {
+      question: `Can you explain ${concept} in your own words?`,
+      expectedAnswer: "explanation demonstrating understanding",
+      purpose: "VERIFY_RECALL",
+    };
+  }
+  if (learnerLevel < 0.6) {
+    return {
+      question: `How would you use ${concept} to solve a different problem than the one we just did?`,
+      expectedAnswer: "application to new context",
+      purpose: "TEST_TRANSFER",
+    };
+  }
+  return {
+    question: `What are the limitations or edge cases of ${concept}?`,
+      expectedAnswer: "awareness of limitations",
+      purpose: "PROBE_DEPTH",
   };
 }
 

@@ -13,7 +13,7 @@
  */
 
 import type { ContentPayload } from "@cpd/core";
-import { structured, type ChatMessage } from "./provider.js";
+import { structured, type ChatMessage, type AIProvider } from "./provider.js";
 import type { OrchestratorImpl } from "./orchestrator.js";
 import {
   contentPayloadSchema,
@@ -28,6 +28,7 @@ import { pickArchetype, generateParams } from "./templates/archetypes.js";
 
 export interface GenerationDeps {
   orchestrator?: OrchestratorImpl;
+  provider?: AIProvider;
 }
 
 /** Ask the AI for structured JSON, routing through the orchestrator when available. */
@@ -38,6 +39,16 @@ async function askAI<T>(
 ): Promise<T | null> {
   if (deps?.orchestrator) {
     return deps.orchestrator.generateStructured(schema, messages);
+  }
+  if (deps?.provider?.configured) {
+    const raw = await deps.provider.chat(messages, { jsonMode: true });
+    const parsed = JSON.parse(raw);
+    const result = schema.safeParse(parsed);
+    if (!result.success) {
+      console.warn(`[ai] structured output failed validation: ${result.error.message.slice(0, 500)}`);
+      return null;
+    }
+    return result.data;
   }
   return structured(schema, messages);
 }
@@ -165,26 +176,73 @@ function templateLesson(ctx: GenContext): GeneratedLesson {
 }
 
 function minimalExample(ctx: GenContext): string {
-  if (ctx.languageKey === "cpp") {
-    return `// A minimal, compilable shape for this concept.
-// Your lesson will expand on the real mechanism — for now, notice
-// how small and predictable the core idea is.
-#include <iostream>
+  const label = ctx.label;
+  const key = ctx.languageKey;
+  const desc = `replace with a tiny illustration of "${label.toLowerCase()}"`;
+  const concept = JSON.stringify(label);
+  if (key === "cpp") {
+    return `#include <iostream>
 
 int main() {
-    // replace with a tiny illustration of "${ctx.label.toLowerCase()}"
-    std::cout << "concept: " << ${JSON.stringify(ctx.label)} << "\\n";
+    // ${desc}
+    std::cout << "concept: " << ${concept} << "\\n";
     return 0;
 }`;
   }
-  return `# A minimal, runnable shape for this concept.
-# Your lesson will expand on the real mechanism.
+  if (key === "rust") {
+    return `fn main() {
+    // ${desc}
+    let concept = ${concept};
+    println!("concept: {}", concept);
+}`;
+  }
+  if (key === "c") {
+    return `#include <stdio.h>
 
-def example():
-    # replace with a tiny illustration of "${ctx.label.toLowerCase()}"
-    return ${JSON.stringify(ctx.label)}
+int main() {
+    // ${desc}
+    printf("concept: %s\\n", ${concept});
+    return 0;
+}`;
+  }
+  if (key === "bash") {
+    return `#!/bin/bash
+# ${desc}
+concept="${concept}"
+echo "concept: $concept"`;
+  }
+  if (key === "js") {
+    return `// ${desc}
+const concept = ${concept};
+console.log("concept:", concept);`;
+  }
+  if (key === "sql") {
+    return `-- ${desc}
+SELECT ${concept} AS concept;`;
+  }
+  if (key === "asm") {
+    return `; ${desc}
+section .data
+    concept db ${concept}, 0
 
-print(example())`;
+section .text
+    global _start
+_start:
+    ; write concept to stdout
+    mov rax, 1
+    mov rdi, 1
+    mov rsi, concept
+    mov rdx, 32
+    syscall
+    ; exit
+    mov rax, 60
+    xor rdi, rdi
+    syscall`;
+  }
+  // python fallback
+  return `# ${desc}
+concept = ${concept}
+print("concept:", concept)`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -231,6 +289,32 @@ export async function generateExercise(
   return templateExercise(ctx, kind);
 }
 
+function fallbackScaffold(ctx: GenContext): string {
+  const label = ctx.label;
+  const k = ctx.languageKey;
+  if (k === "cpp") return `// ${label}\n// TODO: implement\n#include <vector>\nusing namespace std;\n\nvector<int> solution(vector<int> args) {\n    // implement\n    return {};\n}`;
+  if (k === "rust") return `// ${label}\n// TODO: implement\n\nfn solution(args: Vec<i32>) -> Vec<i32> {\n    // implement\n    vec![]\n}`;
+  if (k === "c") return `// ${label}\n// TODO: implement\n#include <stddef.h>\n\n// define function here`;
+  if (k === "bash") return `#!/bin/bash\n# ${label}\n# TODO: implement\nsolution() {\n    echo "implement me"\n}`;
+  if (k === "js") return `// ${label}\n// TODO: implement\nfunction solution(...args) {\n    // implement\n}`;
+  if (k === "python") return `# ${label}\n# TODO: implement\ndef solution(*args):\n    pass`;
+  if (k === "sql") return `-- ${label}\n-- TODO: implement\nSELECT 1;`;
+  if (k === "asm") return `; ${label}\n; TODO: implement`;
+  return `// ${label}\n// TODO: implement\nfunction solution() {}`;
+}
+
+function fallbackReference(ctx: GenContext): string {
+  const label = ctx.label;
+  const k = ctx.languageKey;
+  if (k === "cpp") return `// ${label}\n#include <vector>\nusing namespace std;\n\nvector<int> solution(vector<int> args) {\n    return args;\n}`;
+  if (k === "rust") return `// ${label}\n\nfn solution(args: Vec<i32>) -> Vec<i32> {\n    args\n}`;
+  if (k === "c") return `// ${label}\n#include <stddef.h>`;
+  if (k === "bash") return `#!/bin/bash\n# ${label}\nsolution() { echo "$@"; }`;
+  if (k === "js") return `// ${label}\nfunction solution(...args) { return args; }`;
+  if (k === "python") return `# ${label}\ndef solution(*args): return list(args)`;
+  return `// ${label}\nfunction solution() {}`;
+}
+
 function templateExercise(ctx: GenContext, kind: "CODING" | "DEBUGGING"): GeneratedExercise {
   const archetype = pickArchetype(ctx);
   const params = generateParams(ctx);
@@ -246,8 +330,8 @@ function templateExercise(ctx: GenContext, kind: "CODING" | "DEBUGGING"): Genera
         timeoutMs: 10_000,
       },
       testCases: [{ input: "[]", expected: "[]" }],
-      scaffold: `// ${ctx.label}\n// TODO: implement\nfunction solution() {}`,
-      referenceSolution: `// ${ctx.label}\nfunction solution() { /* implement */ }`,
+      scaffold: fallbackScaffold(ctx),
+      referenceSolution: fallbackReference(ctx),
       explanationMd: `This exercise covers ${ctx.label}.`,
       mistakePattern: "logic_error",
       tags: [ctx.nodeKey]
@@ -329,22 +413,21 @@ export async function generateTracing(ctx: GenContext, kind: "TRACING" | "PREDIC
 
 function templateTracing(ctx: GenContext, kind: "TRACING" | "PREDICTION"): GeneratedExercise {
   const lang = ctx.languageKey;
+  const loopSnippet =
+    lang === "cpp"
+      ? `int main() {\n    int total = 0;\n    for (int i = 1; i <= 4; i++) {\n        total += i * 2;\n    }\n    std::cout << total << std::endl;\n    return 0;\n}`
+      : lang === "rust"
+      ? `fn main() {\n    let mut total = 0;\n    for i in 1..=4 {\n        total += i * 2;\n    }\n    println!("{}", total);\n}`
+      : lang === "c"
+      ? `#include <stdio.h>\nint main() {\n    int total = 0;\n    for (int i = 1; i <= 4; i++) {\n        total += i * 2;\n    }\n    printf("%d\\n", total);\n    return 0;\n}`
+      : lang === "js"
+      ? `let total = 0;\nfor (let i = 1; i <= 4; i++) {\n    total += i * 2;\n}\nconsole.log(total);`
+      : lang === "bash"
+      ? `total=0\nfor i in 1 2 3 4; do\n    total=$((total + i * 2))\ndone\necho $total`
+      : `total = 0\nfor i in range(1, 5):\n    total += i * 2\nprint(total)`;
   const payload: Extract<ContentPayload, { kind: "TRACING" | "PREDICTION" }> = {
     kind,
-    codeSnippet:
-      lang === "cpp"
-        ? `int main() {
-    int total = 0;
-    for (int i = 1; i <= 4; i++) {
-        total += i * 2;
-    }
-    std::cout << total << std::endl;
-    return 0;
-}`
-        : `total = 0
-for i in range(1, 5):
-    total += i * 2
-print(total)`,
+    codeSnippet: loopSnippet,
     acceptedAnswers: ["20"],
     explanationMd: `The loop runs for i = 1, 2, 3, 4 and adds i * 2 each time: 2 + 4 + 6 + 8 = 20. Tracing a loop step by step is the most reliable way to predict behavior — do it on paper before guessing.`,
     hints: [{ threshold: 2, text: "Write out each iteration: what is i, what is added, what is the running total?" }]

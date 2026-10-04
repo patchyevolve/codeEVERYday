@@ -11,7 +11,7 @@ coverage
 .DS_Store
 .tmp
 *.sqlite
-data
+/data
 tmp
 docs
 **/*.test.ts

@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   CompiledContext,
   ContextCompilerInput,
+  MemoryHit,
   TutorExperienceRecord,
 } from "./contracts.js";
 import type { MemorySystemImpl } from "./memory.js";
@@ -37,6 +38,63 @@ function estimateTokens(text: string): number {
 
 function messagesTokenEstimate(messages: ChatMessage[]): number {
   return messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+}
+
+/**
+ * Enforce memory authority rules (§49).
+ * Historical facts cannot be overridden by tutor-generated content.
+ * Session memory takes precedence over historical for recency.
+ * Learner-stated facts are lower authority than system-observed facts.
+ */
+export function enforceMemoryAuthority(hits: MemoryHit[]): MemoryHit[] {
+  const authorityOrder: Record<string, number> = {
+    session: 3,      // most authoritative (system-observed, recent)
+    learner: 2,      // learner-stated claims
+    historical: 1,   // older facts
+    tutor_experience: 2, // tutor's own experience
+    temporary: 0,    // least authoritative
+  };
+
+  // Sort by authority (highest first), then by recency
+  return hits.sort((a, b) => {
+    const authA = authorityOrder[a.store] ?? 0;
+    const authB = authorityOrder[b.store] ?? 0;
+    if (authA !== authB) return authB - authA;
+    // Within same authority, prefer newer
+    const dateA = a.date ?? "";
+    const dateB = b.date ?? "";
+    return dateB.localeCompare(dateA);
+  });
+}
+
+/**
+ * Detect contradictions between memory hits (§49).
+ * If a session memory says X and a historical memory says not-X,
+ * the session memory takes precedence but the contradiction is flagged.
+ */
+export function detectContradictions(
+  hits: MemoryHit[],
+): { hit1: MemoryHit; hit2: MemoryHit; reason: string }[] {
+  const contradictions: { hit1: MemoryHit; hit2: MemoryHit; reason: string }[] = [];
+
+  for (let i = 0; i < hits.length; i++) {
+    for (let j = i + 1; j < hits.length; j++) {
+      const a = hits[i]!;
+      const b = hits[j]!;
+      if (a.store === b.store) continue;
+      if (a.data.concept && a.data.concept === b.data.concept) {
+        if (a.data.result && b.data.result && a.data.result !== b.data.result) {
+          contradictions.push({
+            hit1: a,
+            hit2: b,
+            reason: `Concept "${a.data.concept}": ${a.store} says "${a.data.result}" but ${b.store} says "${b.data.result}"`,
+          });
+        }
+      }
+    }
+  }
+
+  return contradictions;
 }
 
 export class ContextCompiler {

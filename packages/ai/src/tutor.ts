@@ -296,31 +296,35 @@ export class TutorEngine {
     let position = 0;
     for (const task of kept) {
       const node = await this.nodes.findById(task.nodeId);
-      const resolved = await this.content.resolve(
-        {
-          nodeId: node.id,
-          nodeKey: node.nodeKey,
-          label: node.label,
-          definition: node.definition,
-          applications: node.applications,
-          misconceptions: node.misconceptions,
-          languageKey: prefs.languageKey as ExecutorLanguage,
-          difficulty: this.adaptiveFor(node, profile),
-          estMinutes: node.estMinutes,
-          learner: this.learnerCtx(profile),
-          usageCount: await this.content.countForNode(node.id)
-        },
-        task.contentKind
-      );
-      await this.sessions.addTask({
-        sessionId: session.id,
-        position: position++,
-        kind: task.kind,
-        contentItemId: resolved.itemId,
-        title: resolved.title,
-        estMinutes: resolved.estMinutes,
-        required: task.required,
-      });
+      try {
+        const resolved = await this.content.resolve(
+          {
+            nodeId: node.id,
+            nodeKey: node.nodeKey,
+            label: node.label,
+            definition: node.definition,
+            applications: node.applications,
+            misconceptions: node.misconceptions,
+            languageKey: prefs.languageKey as ExecutorLanguage,
+            difficulty: this.adaptiveFor(node, profile),
+            estMinutes: node.estMinutes,
+            learner: this.learnerCtx(profile),
+            usageCount: await this.content.countForNode(node.id)
+          },
+          task.contentKind
+        );
+        await this.sessions.addTask({
+          sessionId: session.id,
+          position: position++,
+          kind: task.kind,
+          contentItemId: resolved.itemId,
+          title: resolved.title,
+          estMinutes: resolved.estMinutes,
+          required: task.required,
+        });
+      } catch (err) {
+        console.warn(`[tutor] skipping task ${task.kind}@${node.nodeKey}: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     await this.sessions.updatePlannedMinutes(session.id, Math.min(total, budget));

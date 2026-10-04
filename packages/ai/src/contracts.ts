@@ -27,13 +27,155 @@ export type AITaskType =
   | "TUTOR_ANALOGY"
   | "TUTOR_DEBUGGING"
   | "TUTOR_CODE_REVIEW"
-  | "SESSION_SUMMARY"
-  | "LEARNER_STATE_ANALYSIS"
+  | "TUTOR_DEEP_EXPLANATION"
+  | "TUTOR_CONCEPT_DISCUSSION"
   | "CONTENT_GENERATION"
   | "CONTENT_REVIEW"
   | "CONTENT_REPAIR"
   | "CONTENT_CLASSIFICATION"
-  | "REMEDIATION_GENERATION";
+  | "CONTENT_DEDUPLICATION"
+  | "REMEDIATION_GENERATION"
+  | "SESSION_SUMMARY"
+  | "LEARNER_STATE_ANALYSIS"
+  | "CLAIM_VERIFICATION"
+  | "ROOT_CAUSE_ANALYSIS"
+  | "RISK_ASSESSMENT";
+
+/* ------------------------------------------------------------------ */
+/* Interaction taxonomy (§29)                                           */
+/* ------------------------------------------------------------------ */
+
+export type InteractionType =
+  | "OPEN_EXPLANATION"
+  | "YES_NO"
+  | "CODE_COMPLETION"
+  | "CODE_DEBUG"
+  | "CODE_READ"
+  | "CODE_WRITE"
+  | "MULTIPLE_CHOICE"
+  | "SHORT_ANSWER"
+  | "MATCHING"
+  | "ORDERING"
+  | "FILL_BLANK"
+  | "TRUE_FALSE"
+  | "ANALOGY_JUDGMENT"
+  | "ANALOGY_GENERATION"
+  | "ERROR_IDENTIFICATION"
+  | "PREDICT_OUTPUT"
+  | "TRACE_EXECUTION"
+  | "EXPLAIN_CONCEPT"
+  | "PEDAGOGICAL_QUERY"
+  | "HISTORICAL_QUERY"
+  | "CODE_REVIEW_REQUEST"
+  | "DISCUSSION"
+  | "DIAGNOSTIC_QUESTION";
+
+/* ------------------------------------------------------------------ */
+/* Question purpose (§31)                                               */
+/* ------------------------------------------------------------------ */
+
+export type QuestionPurpose =
+  | "VERIFY_RECALL"
+  | "TEST_TRANSFER"
+  | "PROBE_DEPTH"
+  | "EXPOSE_MISCONCEPTION"
+  | "CHECK_ENVIRONMENT"
+  | "GAUGE_CONFIDENCE"
+  | "PROMPT_REFLECTION"
+  | "DIAGNOSE_ROOT_CAUSE"
+  | "ASSESS_READINESS"
+  | "ENGAGE_DISCUSSION";
+
+/* ------------------------------------------------------------------ */
+/* Pedagogical strategy (§40 — all 17)                                  */
+/* ------------------------------------------------------------------ */
+
+export type PedagogicalStrategy =
+  | "ANALOGY"
+  | "DECOMPOSITION"
+  | "EXAMPLE_VARIATION"
+  | "CONTRAST"
+  | "VISUALIZATION"
+  | "GUIDED_DISCOVERY"
+  | "SOCRATIC_QUESTIONING"
+  | "DIRECT_EXPLANATION"
+  | "RETRIEVAL_PRACTICE"
+  | "SPACED_REPETITION"
+  | "INTERLEAVING"
+  | "ELABORATIVE_INTERROGATION"
+  | "SELF_EXPLANATION"
+  | "PEER_TUTORING_SIMULATION"
+  | "ERROR_ANALYSIS"
+  | "CONCEPT_MAPPING"
+  | "THINK_ALOUD";
+
+/* ------------------------------------------------------------------ */
+/* Risk level for decisions (§55)                                       */
+/* ------------------------------------------------------------------ */
+
+export type DecisionRiskLevel = "low" | "medium" | "high";
+
+export const HIGH_RISK_ACTIONS: readonly TutorAction[] = [
+  "REVIEW_PREREQUISITE",
+  "REMEDIATE",
+  "CHANGE_TEACHING_METHOD",
+  "END_SESSION",
+] as const;
+
+export const MEDIUM_RISK_ACTIONS: readonly TutorAction[] = [
+  "REEXPLAIN",
+  "DIAGNOSE",
+  "GUIDED_SOLUTION",
+] as const;
+
+export function classifyDecisionRisk(action: TutorAction): DecisionRiskLevel {
+  if ((HIGH_RISK_ACTIONS as readonly string[]).includes(action)) return "high";
+  if ((MEDIUM_RISK_ACTIONS as readonly string[]).includes(action)) return "medium";
+  return "low";
+}
+
+/* ------------------------------------------------------------------ */
+/* Monthly / spending quotas (§6)                                       */
+/* ------------------------------------------------------------------ */
+
+export interface QuotaConfig {
+  daily: {
+    requests: number;
+    tokens: number;
+    costUsd: number;
+  };
+  monthly: {
+    requests: number;
+    tokens: number;
+    costUsd: number;
+  };
+}
+
+export interface QuotaUsage {
+  daily: {
+    requests: number;
+    tokens: number;
+    costUsd: number;
+    resetAt: Date;
+  };
+  monthly: {
+    requests: number;
+    tokens: number;
+    costUsd: number;
+    resetAt: Date;
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Content versioning (§14)                                             */
+/* ------------------------------------------------------------------ */
+
+export interface ContentVersion {
+  contentId: string;
+  version: number;
+  supersededBy?: string;
+  supersededAt?: Date;
+}
 
 /* ------------------------------------------------------------------ */
 /* Priority                                                             */
@@ -89,6 +231,18 @@ export interface ChatMessage {
 }
 
 /* ------------------------------------------------------------------ */
+/* Completion options                                                   */
+/* ------------------------------------------------------------------ */
+
+export interface CompletionOptions {
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+  /** Ask the provider for structured JSON output (JSON mode / response_format). */
+  jsonMode?: boolean;
+}
+
+/* ------------------------------------------------------------------ */
 /* AI Request / Response                                                */
 /* ------------------------------------------------------------------ */
 
@@ -111,6 +265,8 @@ export interface AIRequest {
   timeoutMs?: number;
   /** Fallback chain: identical semantic tasks routed on failure. */
   fallbackChain?: number;
+  /** If true, use streaming response instead of synchronous completion. */
+  streaming?: boolean;
 }
 
 export interface AIResult {
@@ -235,16 +391,31 @@ export interface JobRef {
 export interface AIGateway {
   /** Synchronous request — P0/P1. Blocks until result or fallback. */
   request(req: AIRequest): Promise<AIResult>;
+  /** Streaming request — returns an async iterable of stream chunks. */
+  requestStream(req: AIRequest): AsyncIterable<StreamChunk>;
   /** Enqueue for background processing — P2–P4 via pg-boss. */
   enqueue(req: AIRequest): Promise<JobRef>;
   /** Get a raw provider for callers that need direct access (provider.ts compat). */
   getRawProvider(): RawProvider;
 }
 
+export interface StreamChunk {
+  content: string;
+  done: boolean;
+  usage?: { in: number; out: number };
+}
+
+export interface StreamingProvider {
+  readonly name: string;
+  readonly configured: boolean;
+  chatStream(messages: ChatMessage[], opts?: CompletionOptions): AsyncIterable<StreamChunk>;
+}
+
 export interface RawProvider {
   readonly name: string;
   readonly configured: boolean;
   chat(messages: ChatMessage[], opts?: { temperature?: number; maxTokens?: number; timeoutMs?: number; jsonMode?: boolean }): Promise<string>;
+  chatStream?(messages: ChatMessage[], opts?: { temperature?: number; maxTokens?: number; timeoutMs?: number; jsonMode?: boolean }): AsyncIterable<StreamChunk>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -265,6 +436,8 @@ export interface Orchestrator {
 export interface TutorMessage {
   type: "LEARNER_MESSAGE" | "LEARNER_CLAIM" | "LEARNER_CORRECTION" | "SYSTEM_EVENT";
   content: string;
+  interactionType?: InteractionType;
+  questionPurpose?: QuestionPurpose;
   metadata?: Record<string, unknown>;
 }
 
@@ -366,6 +539,7 @@ export interface TutorDecisionRecord {
   selectedHypothesis?: string;
   confidence: number;
   action: TutorAction;
+  riskLevel: DecisionRiskLevel;
   expectedOutcome: string;
   actualOutcome?: string;
   verdict: DecisionVerdict;
@@ -383,7 +557,9 @@ export interface TutorExperienceRecord {
   concept: string;
   learnerProblem: string;
   strategy: string;
+  strategyType?: PedagogicalStrategy;
   outcome: StrategyOutcome;
+  riskLevel?: DecisionRiskLevel;
   context: {
     learnerState?: string;
     difficulty?: number;

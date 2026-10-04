@@ -4,6 +4,15 @@ import { api, type Session, type Task } from "../lib/api.js";
 import PageHeader from "../components/PageHeader.js";
 import LoadingState from "../components/LoadingState.js";
 
+function ckLabel(kind: string): string {
+  const map: Record<string, string> = {
+    LESSON: "Learn", CODING: "Coding", DEBUGGING: "Debug",
+    CONCEPTUAL: "Concepts", TRACING: "Trace", PREDICTION: "Predict",
+    ASSESSMENT: "Assess", REAL_WORLD: "Apply", PROJECT: "Project",
+  };
+  return map[kind] ?? kind;
+}
+
 export default function SessionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -20,7 +29,7 @@ export default function SessionPage() {
           navigate("/dashboard", { replace: true });
           return;
         }
-        const data = await api.today(controller.signal);
+        const data = await api.session(id, controller.signal);
         setSession(data.session);
         setTasks(data.tasks);
       } catch (err) {
@@ -80,7 +89,7 @@ export default function SessionPage() {
               <div>
                 <p className="font-medium">{task.title}</p>
                 <p className="text-sm text-gray-500">
-                  {task.kind} &middot; ~{task.estMinutes} min
+                  {ckLabel((task.content as Record<string, unknown>)?.kind as string ?? task.kind)} &middot; ~{task.estMinutes} min
                 </p>
               </div>
               <div className="text-right">

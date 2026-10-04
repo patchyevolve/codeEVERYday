@@ -30,99 +30,139 @@ const STALE_RUNNING_MIN = 10;
 
 let _generatedToday = "";
 
+/**
+ * Stable advisory-lock keys, one per sweep, so every worker replica agrees on
+ * which lock guards which job.
+ */
+const SWEEP_KEYS = {
+  dailyGeneration: 710_001,
+  reminders: 710_002,
+  missed: 710_003,
+  decay: 710_004,
+  notifications: 710_005,
+  providerState: 710_006,
+  jobHousekeeping: 710_007,
+} as const;
+
+/**
+ * Run `fn` only if this process wins the named advisory lock.
+ *
+ * The lock is taken with `pg_try_advisory_xact_lock` *inside* a transaction so
+ * lock and unlock always happen on the same pooled connection — a plain
+ * session-level advisory lock would be unusable with a connection pool, because
+ * the unlock can land on a different connection. It is released automatically
+ * when the transaction ends.
+ *
+ * Resolves `true` when `fn` ran, `false` when another replica already holds the
+ * lock, and throws if `fn` fails (so callers can retry).
+ */
+async function exclusively(
+  c: Container,
+  key: number,
+  name: string,
+  log: Logger,
+  fn: () => Promise<unknown>
+): Promise<boolean> {
+  let ran = false;
+  await c.db.transaction(async (tx) => {
+    const res = (await tx.execute(
+      sql`select pg_try_advisory_xact_lock(${key}) as locked`
+    )) as { rows: { locked: boolean }[] };
+    if (!res.rows[0]?.locked) {
+      log.debug({ name, key }, `${name}: already running on another worker — skipping`);
+      return;
+    }
+    ran = true;
+    await fn();
+  });
+  return ran;
+}
+
 export function startScheduler(
   c: Container,
   log: Logger
 ): NodeJS.Timeout[] {
   const intervals: NodeJS.Timeout[] = [];
 
+  /** Register a sweep that at most one worker replica runs at a time. */
+  const every = (
+    name: string,
+    key: number,
+    ms: number,
+    fn: () => Promise<unknown>
+  ): void => {
+    intervals.push(
+      setInterval(() => {
+        exclusively(c, key, name, log, fn).catch((err) =>
+          log.error({ err, name }, `${name} failed`)
+        );
+      }, ms)
+    );
+  };
+
   // --- Daily session generation (hourly check at the configured UTC hour) ---
   intervals.push(
-    setInterval(async () => {
+    setInterval(() => {
       const now = new Date();
       const todayKey = now.toISOString().slice(0, 10);
-      if (now.getUTCHours() === GENERATION_HOUR && _generatedToday !== todayKey) {
-        _generatedToday = todayKey;
-        try {
-          await generateDailySessions(c, log);
-        } catch (err) {
-          log.error({ err }, "Daily session generation failed");
-          _generatedToday = "";
-        }
+      if (now.getUTCHours() !== GENERATION_HOUR || _generatedToday === todayKey) {
+        return;
       }
+      _generatedToday = todayKey;
+      exclusively(
+        c,
+        SWEEP_KEYS.dailyGeneration,
+        "daily generation",
+        log,
+        () => generateDailySessions(c, log)
+      ).catch((err) => {
+        log.error({ err }, "Daily session generation failed");
+        // allow a retry on the next tick
+        _generatedToday = "";
+      });
     }, 60_000)
   );
 
   // --- Reminder sweep ---
-  intervals.push(
-    setInterval(async () => {
-      try {
-        await sweepReminders(c, log);
-      } catch (err) {
-        log.error({ err }, "Reminder sweep failed");
-      }
-    }, REMINDER_SWEEP_MIN * 60_000)
+  every("reminder sweep", SWEEP_KEYS.reminders, REMINDER_SWEEP_MIN * 60_000, () =>
+    sweepReminders(c, log)
   );
 
   // --- Missed session processing ---
-  intervals.push(
-    setInterval(async () => {
-      try {
-        await processMissedSessions(c, log);
-      } catch (err) {
-        log.error({ err }, "Missed session processing failed");
-      }
-    }, MISSED_INTERVAL_MIN * 60_000)
+  every(
+    "missed session processing",
+    SWEEP_KEYS.missed,
+    MISSED_INTERVAL_MIN * 60_000,
+    () => processMissedSessions(c, log)
   );
 
   // --- Concept decay ---
-  intervals.push(
-    setInterval(async () => {
-      try {
-        await sweepConceptDecay(c, log);
-      } catch (err) {
-        log.error({ err }, "Concept decay sweep failed");
-      }
-    }, DECAY_INTERVAL_MIN * 60_000)
+  every("concept decay sweep", SWEEP_KEYS.decay, DECAY_INTERVAL_MIN * 60_000, () =>
+    sweepConceptDecay(c, log)
   );
 
   // --- Notification dispatch ---
-  intervals.push(
-    setInterval(async () => {
-      try {
-        await dispatchNotifications(c.db, log);
-      } catch (err) {
-        log.error({ err }, "Notification dispatch failed");
-      }
-    }, NOTIFICATION_DISPATCH_INTERVAL_MS)
+  every(
+    "notification dispatch",
+    SWEEP_KEYS.notifications,
+    NOTIFICATION_DISPATCH_INTERVAL_MS,
+    () => dispatchNotifications(c.db, log)
   );
 
   // --- Provider state persistence ---
-  intervals.push(
-    setInterval(async () => {
-      try {
-        await c.saveProviderState();
-      } catch (err) {
-        log.error({ err }, "Provider state save failed");
-      }
-    }, PROVIDER_STATE_INTERVAL_MS)
+  every("provider state save", SWEEP_KEYS.providerState, PROVIDER_STATE_INTERVAL_MS, () =>
+    c.saveProviderState()
   );
 
   // --- Job queue housekeeping ---
-  intervals.push(
-    setInterval(async () => {
-      try {
-        await cleanupJobs(c, log);
-      } catch (err) {
-        log.error({ err }, "Job housekeeping failed");
-      }
-    }, JOB_HOUSEKEEPING_INTERVAL_MS)
+  every("job housekeeping", SWEEP_KEYS.jobHousekeeping, JOB_HOUSEKEEPING_INTERVAL_MS, () =>
+    cleanupJobs(c, log)
   );
 
-  // Run once on startup
-  dispatchNotifications(c.db, log).catch((err) =>
-    log.error({ err }, "Initial notification dispatch failed")
-  );
+  // Run once on startup (still lock-guarded: replicas start at the same time)
+  exclusively(c, SWEEP_KEYS.notifications, "initial notification dispatch", log, () =>
+    dispatchNotifications(c.db, log)
+  ).catch((err) => log.error({ err }, "Initial notification dispatch failed"));
 
   return intervals;
 }

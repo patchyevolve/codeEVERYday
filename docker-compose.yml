@@ -1,6 +1,6 @@
 # docker-compose.yml — local development stack
 # Usage:
-#   cp .env.example .env          # create your .env (or use .env.docker defaults)
+#   cp .env.example .env          # required: supplies API_SESSION_SECRET + EXECUTOR_AUTH_TOKEN
 #   docker compose up             # start everything (runc sandbox)
 #   docker compose --profile gvisor up  # start with gVisor sandbox (requires runsc)
 #   docker compose up -d          # start in background
@@ -42,12 +42,22 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      # No curl/wget in the slim image; node is always available.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     environment:
       NODE_ENV: development
       DATABASE_URL: postgres://cpd:cpd@postgres:5432/cpd
       API_PORT: "4000"
       API_HOST: "0.0.0.0"
-      API_SESSION_SECRET: "local-dev-secret-change-in-production"
+      API_SESSION_SECRET: "${API_SESSION_SECRET:?API_SESSION_SECRET must be set — cp .env.example .env and generate one}"
+      EXECUTOR_AUTH_TOKEN: "${EXECUTOR_AUTH_TOKEN:?EXECUTOR_AUTH_TOKEN must be set — cp .env.example .env and generate one}"
       SESSION_TTL_DAYS: "30"
       COOKIE_SECURE: "false"
       TRUST_PROXY: "false"
@@ -61,14 +71,20 @@ services:
       context: .
       target: executor
     restart: unless-stopped
-    ports:
-      - "4100:4100"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # No host port publish: /execute runs arbitrary learner code, so it is
+    # reachable only from sibling services on this compose network.
+    expose:
+      - "4100"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     environment:
       NODE_ENV: development
       EXECUTOR_PORT: "4100"
+      EXECUTOR_AUTH_TOKEN: "${EXECUTOR_AUTH_TOKEN:?EXECUTOR_AUTH_TOKEN must be set — cp .env.example .env and generate one}"
       EXECUTOR_USE_DOCKER: "true"
       EXECUTOR_DOCKER_RUNTIME: ""            # empty = default runc
       EXECUTOR_DEFAULT_TIMEOUT_MS: "5000"
@@ -87,9 +103,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: development
       DATABASE_URL: postgres://cpd:cpd@postgres:5432/cpd
+      EXECUTOR_URL: http://executor:4100
+      EXECUTOR_AUTH_TOKEN: "${EXECUTOR_AUTH_TOKEN:?EXECUTOR_AUTH_TOKEN must be set — cp .env.example .env and generate one}"
       WORKER_POLL_INTERVAL_MS: "5000"
       REMINDER_SWEEP_INTERVAL_MIN: "5"
       DAILY_GENERATION_HOUR: "0"
@@ -108,14 +128,13 @@ services:
       context: .
       target: executor
     restart: unless-stopped
-    ports:
-      - "4100:4100"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # Not published to the host — see executor above.
+    expose:
+      - "4100"
     environment:
       NODE_ENV: development
       EXECUTOR_PORT: "4100"
+      EXECUTOR_AUTH_TOKEN: "${EXECUTOR_AUTH_TOKEN:?EXECUTOR_AUTH_TOKEN must be set — cp .env.example .env and generate one}"
       EXECUTOR_USE_DOCKER: "true"
       EXECUTOR_DOCKER_RUNTIME: "runsc"       # gVisor user-space kernel
       EXECUTOR_DEFAULT_TIMEOUT_MS: "5000"
@@ -129,13 +148,13 @@ services:
   web:
     build:
       context: .
-      target: base
+      target: web
     restart: unless-stopped
     ports:
       - "5173:5173"
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     environment:
       NODE_ENV: development
     command: ["npm", "run", "dev", "-w", "@cpd/web"]

@@ -17,8 +17,26 @@ let pool: Pool;
 let db: DB;
 let container: Container;
 
+/**
+ * Integration tests write (and delete) rows, so they must never run against the
+ * development database. TEST_DATABASE_URL is required and DATABASE_URL is
+ * deliberately not consulted: silently falling back to it is how a test suite
+ * ends up wiping a real database.
+ */
+function requireTestDatabaseUrl(): string {
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "TEST_DATABASE_URL is not set. Integration tests refuse to fall back to " +
+        "DATABASE_URL. Point TEST_DATABASE_URL at a disposable database " +
+        "(see .env.example), then run: npm run test:integration"
+    );
+  }
+  return url;
+}
+
 export async function setupTestApp(): Promise<FastifyInstance> {
-  pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  pool = new Pool({ connectionString: requireTestDatabaseUrl() });
   const schemaObj = { users, userPreferences, dailySessions, dailyTasks, contentItems, domainNodes, domainEdges, userConceptState, streaks, xpLedger, userGoals, goalMilestones, dailyCompletions, submissions, executions, mistakes, userLearningPath };
   db = drizzle(pool, { schema: schemaObj }) as unknown as DB;
   container = createContainer(db);
@@ -41,7 +59,7 @@ export async function teardownTestApp(app: FastifyInstance): Promise<void> {
 }
 
 export async function cleanupTestUsers(p?: Pool): Promise<void> {
-  const p2 = p ?? new Pool({ connectionString: process.env.DATABASE_URL });
+  const p2 = p ?? new Pool({ connectionString: requireTestDatabaseUrl() });
   const d = drizzle(p2);
   await d.execute(sql`DELETE FROM users WHERE email LIKE '%@example.com'`);
   if (!p) await p2.end();

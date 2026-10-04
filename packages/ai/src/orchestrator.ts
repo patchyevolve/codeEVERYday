@@ -38,13 +38,19 @@ const TASK_CAPABILITIES: Record<AITaskType, string[]> = {
   TUTOR_ANALOGY: ["code"],
   TUTOR_DEBUGGING: ["code"],
   TUTOR_CODE_REVIEW: ["code"],
+  TUTOR_DEEP_EXPLANATION: ["code"],
+  TUTOR_CONCEPT_DISCUSSION: ["code"],
   SESSION_SUMMARY: ["code"],
   LEARNER_STATE_ANALYSIS: ["code"],
   CONTENT_GENERATION: ["code"],
   CONTENT_REVIEW: ["code"],
   CONTENT_REPAIR: ["code"],
   CONTENT_CLASSIFICATION: ["code"],
+  CONTENT_DEDUPLICATION: ["code"],
   REMEDIATION_GENERATION: ["code"],
+  CLAIM_VERIFICATION: ["code"],
+  ROOT_CAUSE_ANALYSIS: ["code"],
+  RISK_ASSESSMENT: ["code"],
 };
 
 /** Default priority by task type. */
@@ -56,20 +62,59 @@ const DEFAULT_PRIORITY: Record<AITaskType, Priority> = {
   TUTOR_CODE_REVIEW: "P0",
   TUTOR_ANALOGY: "P1",
   TUTOR_EXAMPLE: "P1",
+  TUTOR_DEEP_EXPLANATION: "P1",
+  TUTOR_CONCEPT_DISCUSSION: "P1",
   LEARNER_DIAGNOSIS: "P1",
   HYPOTHESIS_GENERATION: "P1",
   HYPOTHESIS_EVALUATION: "P1",
   SESSION_SUMMARY: "P1",
   LEARNER_STATE_ANALYSIS: "P1",
+  CLAIM_VERIFICATION: "P1",
+  ROOT_CAUSE_ANALYSIS: "P2",
+  RISK_ASSESSMENT: "P2",
   CURRICULUM_PLANNING: "P2",
   DAILY_SESSION_PLANNING: "P2",
   SESSION_REVIEW: "P2",
   CONTENT_GENERATION: "P3",
   CONTENT_REVIEW: "P3",
   CONTENT_REPAIR: "P3",
+  CONTENT_DEDUPLICATION: "P3",
   CONTENT_CLASSIFICATION: "P4",
   REMEDIATION_GENERATION: "P3",
 };
+
+/**
+ * Generate a fallback response when all providers are unavailable (§51).
+ * Used only during live sessions (P0/P1) to maintain continuity.
+ */
+export function getFallbackResponse(taskType: AITaskType, context?: string): AIResult {
+  const fallbacks: Record<string, string> = {
+    TUTOR_EXPLANATION: "I'm having trouble connecting to my knowledge base right now. Let me try to explain this from what we've been discussing. Could you remind me which specific part you'd like me to clarify?",
+    TUTOR_HINT: "I'm experiencing a temporary issue, but let me think through this with you. What have you already tried?",
+    TUTOR_CLARIFICATION: "I want to make sure I understand your question correctly. Could you rephrase that for me?",
+    TUTOR_EXAMPLE: "Let me work through an example step by step. I'll need to think through this carefully.",
+    TUTOR_DEBUGGING: "Let me help you debug this. Can you walk me through what you're seeing step by step?",
+    TUTOR_CODE_REVIEW: "I'll review your code. Let me look at the key parts and give you feedback.",
+    TUTOR_DEEP_EXPLANATION: "Let me think about this concept more deeply. What aspects are you most curious about?",
+    TUTOR_CONCEPT_DISCUSSION: "I'd love to discuss this concept with you. What's your current understanding?",
+  };
+
+  const content = fallbacks[taskType] ?? "I'm experiencing a temporary connection issue. Could you repeat your last message?";
+
+  return {
+    ok: true,
+    requestId: `fallback-${Date.now()}`,
+    content,
+    provider: "fallback",
+    model: "none",
+    latencyMs: 0,
+    tokens: { in: 0, out: 0 },
+    costUsd: 0,
+    fromCache: false,
+    fallbackUsed: true,
+    retryCount: 0,
+  };
+}
 
 export class OrchestratorImpl implements Orchestrator {
   private readonly db: DB;
@@ -104,7 +149,16 @@ export class OrchestratorImpl implements Orchestrator {
     };
 
     if (SYNCHRONOUS_PRIORITIES.has(effectivePriority)) {
-      return this.gateway.request(aiRequest);
+      try {
+        return await this.gateway.request(aiRequest);
+      } catch (err) {
+        // For live tutoring sessions (P0/P1), degrade gracefully (§51)
+        if (effectivePriority === "P0" || effectivePriority === "P1") {
+          const lastMsg = req.messages.length > 0 ? req.messages[req.messages.length - 1] : undefined;
+          return getFallbackResponse(req.taskType, lastMsg?.content);
+        }
+        throw err;
+      }
     }
 
     return this.gateway.enqueue(aiRequest).then((jobRef) => ({

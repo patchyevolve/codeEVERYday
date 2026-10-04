@@ -1,0 +1,1878 @@
+{
+  "version": 1,
+  "notes": "Python Fundamentals track: dynamic typing and references, control flow, functions, lists (slicing, comprehensions), and dicts (hashing).",
+  "tracks": [
+    {
+      "languageKey": "python",
+      "languageName": "Python",
+      "modules": [
+        {
+          "slug": "python-fundamentals",
+          "title": "Python Fundamentals",
+          "description": "The mental model that makes Python click: names and references, dynamic types, control flow, functions, and the two collections that power everything else.",
+          "position": 0,
+          "levelGate": 0,
+          "topics": [
+            {
+              "slug": "basics",
+              "title": "Basics",
+              "concepts": [
+                {
+                  "slug": "py-variables-types",
+                  "title": "Variables & Types",
+                  "description": "Python's dynamic typing explained: names are references to objects, int/float/str/bool/None are immutable, and is vs == is identity vs equality. Includes a CODING exercise returning type names.",
+                  "estMinutes": 40,
+                  "difficulty": 1,
+                  "prerequisites": [],
+                  "masteryTarget": 0.85,
+                  "lesson": {
+                    "title": "Python Variables & Types: Names, Not Boxes",
+                    "estMinutes": 18,
+                    "content": [
+                      {
+                        "type": "markdown",
+                        "title": "The problem it solves",
+                        "content": "Coming from C, Java, or C++, the first thing that throws you in Python is that a variable can hold a number, then a string, then a list, with no declarations. If you assume Python variables are like C variables — boxes that contain values — you will write buggy code around copying, mutation, and equality. Python's mental model is genuinely different, and it is small enough to hold fully in your head: *variables are names, values are objects, and names point at objects.* Getting this model right up front prevents a whole class of confusing bugs."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Mental model",
+                        "content": "Everything in Python is an *object* living somewhere in memory. A variable name is a sticky label tied to an object — not a box containing it. Assignment `x = 5` says \"attach the label x to the object 5\"; `x = \"hi\"` later just re-sticks the same label onto a different object. The old object is not modified or destroyed by the re-sticking (unless nothing points to it anymore, then the garbage collector reclaims it).\n\nA good picture: objects are people in a room, names are name-tags. Giving someone a second tag costs nothing and creates no copy. Taking a tag off someone and putting it on someone else changes nothing about the first person."
+                      },
+                      {
+                        "type": "code",
+                        "title": "Simple example",
+                        "content": "x = 5                    # label x -> int object 5\nprint(type(x))              # <class 'int'>\nx = \"hello\"                 # label x -> str object; int 5 is untouched\nprint(type(x))              # <class 'str'>\nx = None                    # label x -> the None object\nprint(x is None)            # True (identity check)\nprint(3.5, True, \"text\")    # float, bool, str — all first-class objects",
+                        "language": "python"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Why it works: dynamic typing and object references",
+                        "content": "Python names live in a namespace (a dict). `x = value` stores a *reference* to the object under the key \"x\". There is no per-variable type because the type belongs to the object, and the name can point at any object at any time — that is dynamic typing. The interpreter checks the object's type when an operation runs: `x + y` dispatches based on the types of the objects x and y *point at right now*, which is why the same code line works for ints, floats, or (with the right operator overloads) other types.\n\nCrucially, `int`, `float`, `str`, `bool`, and `None` are **immutable**: operations like `s + \"x\"` or `n + 1` never modify the old object; they create a new one and rebind the name. That is why `y = x; y = y + 1` leaves x alone but `y = x; y.append(1)` (a *mutable* list) changes what x points at. Immutability is what makes ints and strings safe to share everywhere."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Identity vs equality: is vs ==",
+                        "content": "`==` compares *values*: `[1, 2] == [1, 2]` is True. `is` compares *identity*: whether the two names point at the *same object*. For immutable types the difference is usually invisible (the interpreter may reuse one small int object for 5 everywhere), so `5 is 5` often returns True — but that is an implementation detail, not a promise. The bug arrives when people write `x is 5` or `name is \"alice\"`: it *usually* works and then breaks mysteriously for other values. Rule: use `is` only for `None` (the standard idiom `if x is None:`), and `==` for everything else."
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Common mistakes",
+                        "content": "1. **Expecting immutable types to mutate.** `s = \"abc\"; s.upper()` does NOT change s — `upper` returns a new string. If you ignore the return value, the change silently vanishes. Strings, ints, floats, and tuples never change in place.\n\n2. **Writing `x is 5` or `x == None`.** `is` with literals works by accident for small ints; `== None` works but is un-idiomatic and can be fooled by a class whose `__eq__` returns True for None. The idiom is `if x is None:`.\n\n3. **Assuming assignment copies.** `b = a` for a list copies only the name — both names now point at the same list. This is the single most common source of \"I mutated one variable and another changed\" bugs. Copy explicitly when you want independence (`b = a[:]` or `b = a.copy()`).\n\n4. **Checking types instead of trusting duck typing.** `type(x) == int` rejects int subclasses and is verbose; prefer behavior-based checks (`isinstance(x, int)`) or just use the value's behavior.\n\n5. **Expecting a compile-time error for type mistakes.** Dynamic typing moves type errors to runtime: `\"abc\" + 5` raises TypeError when it runs, not when you write it. Good test coverage is how you catch these.",
+                        "calloutKind": "common-mistake"
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Real-world use",
+                        "content": "Python's dynamic typing is why it dominates scripting, automation, data science, and glue code: you can hold any value in any name, and duck typing lets one function handle lists, tuples, generators, and custom sequences as long as they support the same operations. Jupyter notebooks and REPLs lean on the freedom to change your mind mid-flight. Big systems (Django, Flask, pandas, NumPy) rely on protocol-based flexibility — e.g. anything iterable works in a for loop. Type hints and tools like mypy give you optional static safety when a project grows large enough to want it.",
+                        "calloutKind": "real-world"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "When NOT to use it",
+                        "content": "- **Performance-critical inner loops** — dynamic dispatch and runtime type checks cost real time; numpy and C extensions exist precisely because pure-Python loops are slow.\n- **Huge numeric data** — use numpy arrays, not Python lists of Python floats: each float is a separate object with overhead.\n- **Very large codebases without tooling** — dynamic typing makes interfaces implicit; type hints + mypy restore the safety net.\n- **The types are part of the contract** (e.g. a library API): document them, or the caller's bugs become your bugs at runtime."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "What you just learned",
+                        "content": "- Variables are names (labels), not boxes: assignment rebinds a label to an object, it never copies.\n- Every value is an object; the type lives on the object, so typing is dynamic and checked at runtime.\n- int, float, str, bool, None are immutable; list, dict, set are mutable.\n- `is` = identity (same object), `==` = value equality; use `is None` and nothing else with is.\n- Dynamic typing buys flexibility; pay for it with tests or type hints."
+                      }
+                    ]
+                  },
+                  "exercises": [
+                    {
+                      "kind": "CONCEPTUAL",
+                      "title": "Which of these are immutable?",
+                      "promptMd": "Which of the following Python values are **immutable** (an operation on them never changes the original object; it creates a new one)?",
+                      "difficulty": 1,
+                      "estMinutes": 2,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Think about what happens with `x = x + 1` vs `lst.append(v)`."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "int, float, str, bool, and None can never be modified in place."
+                        }
+                      ],
+                      "explanationMd": "int, float, str, bool, and None are immutable. list, dict, and set are mutable: methods like append, update, and add modify the object itself, which matters when two names point at the same object.",
+                      "answer": {
+                        "kind": "mcq",
+                        "options": [
+                          "int, str, bool",
+                          "int, str, list",
+                          "list, dict, str",
+                          "dict, set, float"
+                        ],
+                        "answerIndex": 0
+                      },
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "types",
+                        "immutability"
+                      ]
+                    },
+                    {
+                      "kind": "PREDICTION",
+                      "title": "What prints?",
+                      "promptMd": "What does this code print?\n\n```python\na = 10\nb = a\na = 20\nprint(b)\n```",
+                      "difficulty": 1,
+                      "estMinutes": 2,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Assignment rebinds the NAME, it does not modify the object the other name points at."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "After `b = a`, both names point at the int 10. Then `a = 20` just moves the label a."
+                        }
+                      ],
+                      "explanationMd": "b still points at the object 10 — rebinding a never touches b or the int object. (For immutable ints this is the only possible behavior; for a list mutated in place it would differ.)",
+                      "answer": {
+                        "kind": "text",
+                        "accepted": [
+                          "10",
+                          "b is 10",
+                          "10 (b still points at the int 10)"
+                        ]
+                      },
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "variables",
+                        "references"
+                      ]
+                    },
+                    {
+                      "kind": "TRACING",
+                      "title": "Trace the alias",
+                      "promptMd": "What does this code print?\n\n```python\nx = [1, 2]\ny = x\ny.append(3)\nprint(x)\n```",
+                      "difficulty": 2,
+                      "estMinutes": 3,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "y = x makes both names point at the SAME list object — no copy is made."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "append mutates that one shared list, so x sees the change."
+                        }
+                      ],
+                      "explanationMd": "y = x copied the reference, not the list. append mutates the single shared list object, so x — still pointing at it — prints [1, 2, 3]. To avoid this, copy explicitly: y = x[:] or y = x.copy().",
+                      "answer": {
+                        "kind": "text",
+                        "accepted": [
+                          "[1, 2, 3]",
+                          "[1, 2, 3] (both names point at the same list)"
+                        ]
+                      },
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "variables",
+                        "alias",
+                        "mutation"
+                      ]
+                    },
+                    {
+                      "kind": "CODING",
+                      "title": "What type is it?",
+                      "promptMd": "Write `type_name(value)` that returns the NAME of the type of `value` as a string — e.g. `int` for 42, `str` for \"hi\", `NoneType` for None, `list` for [1, 2], `dict` for {\"a\": 1}. Use the built-in `type` function.",
+                      "difficulty": 1,
+                      "estMinutes": 5,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "type(value) returns the type object; its __name__ attribute holds the name string."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "return type(value).__name__"
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "type_name",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              42
+                            ],
+                            "expected": "int",
+                            "description": "integer"
+                          },
+                          {
+                            "input": [
+                              3.5
+                            ],
+                            "expected": "float",
+                            "description": "float"
+                          },
+                          {
+                            "input": [
+                              "hi"
+                            ],
+                            "expected": "str",
+                            "description": "string"
+                          },
+                          {
+                            "input": [
+                              true
+                            ],
+                            "expected": "bool",
+                            "description": "boolean"
+                          },
+                          {
+                            "input": [
+                              null
+                            ],
+                            "expected": "NoneType",
+                            "description": "None"
+                          },
+                          {
+                            "input": [
+                              [
+                                1,
+                                2
+                              ]
+                            ],
+                            "expected": "list",
+                            "description": "list"
+                          },
+                          {
+                            "input": [
+                              {
+                                "a": 1
+                              }
+                            ],
+                            "expected": "dict",
+                            "description": "dict"
+                          }
+                        ]
+                      },
+                      "scaffold": "def type_name(value):\n    # TODO: return the type name of value as a string\n    return \"\"",
+                      "referenceSolution": "def type_name(value):\n    return type(value).__name__",
+                      "explanationMd": "type() returns the type object of the argument; `__name__` is the type's name: `int`, `float`, `str`, `bool`, `NoneType`, `list`, `dict`. This is the dynamic-typing toolbox in one call — the type is a property of the object, decided at runtime.",
+                      "mistakePattern": "misread_problem",
+                      "tags": [
+                        "python",
+                        "types",
+                        "builtins"
+                      ]
+                    }
+                  ],
+                  "assessment": {
+                    "title": "Variables & Types Assessment",
+                    "estMinutes": 7,
+                    "passThreshold": 0.7,
+                    "questions": [
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Which statement about Python variables is TRUE?",
+                        "options": [
+                          "A variable's type is fixed at its first assignment",
+                          "A variable is a name that points at an object; assignment rebinds the name and never copies the object",
+                          "Variables are boxes that hold values, like C variables",
+                          "Every variable holds a copy of its value"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "Python names are references in a namespace. Assignment sticks the name to an object; nothing is copied, and the same object can have many names.",
+                        "conceptSlug": "py-variables-types",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Which values are immutable in Python?",
+                        "options": [
+                          "list, dict, set",
+                          "int, float, str, bool, None",
+                          "list and dict only",
+                          "Everything in Python is immutable"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "int, float, str, bool, None (and tuples) cannot be modified in place; operations on them create new objects. list, dict, and set can be mutated.",
+                        "conceptSlug": "py-variables-types",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Why is `x is None` the correct idiom instead of `x == None`?",
+                        "options": [
+                          "Because is is faster for all comparisons",
+                          "Because is checks identity — there is exactly one None object — while == can be overridden and mislead",
+                          "Because == is only for numbers",
+                          "Because is checks value equality"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "None is a singleton: is verifies identity, which is exactly the intent. == goes through equality semantics, which a custom class could override to return True for None.",
+                        "conceptSlug": "py-variables-types",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What does this print?\n\na = [1, 2]\nb = a\nb = b + [3]\nprint(a)",
+                        "options": [
+                          "[1, 2, 3]",
+                          "[1, 2]",
+                          "[3, 1, 2]",
+                          "It raises an error"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "b = b + [3] creates a NEW list and rebinds the name b. The original list a points at is untouched, so a prints [1, 2]. (Note the contrast with b.append(3), which mutates the shared object.)",
+                        "conceptSlug": "py-variables-types",
+                        "points": 1
+                      },
+                      {
+                        "kind": "EXPLAIN",
+                        "prompt": "Explain the difference between 'rebinding a name' and 'mutating an object', using int and list as examples. Why does this matter when you pass a value into a function?",
+                        "explanation": "Rebinding moves a name to a different object (x = x + 1); mutation changes the object itself (lst.append(1)). For an int, rebinding is the only option because ints are immutable. For a list, mutation changes the object every name pointing at it can see. When you pass an argument to a function, Python passes the reference: rebinding the parameter inside the function does not affect the caller, but mutating the object through that reference does — the caller's variable suddenly sees the change. Understanding which of the two your function does is essential for writing predictable code.",
+                        "conceptSlug": "py-variables-types",
+                        "points": 2
+                      }
+                    ]
+                  }
+                },
+                {
+                  "slug": "py-control-flow",
+                  "title": "Control Flow",
+                  "description": "if/elif/else, for over range, while, break/continue, truthiness, and enumerate — with indentation as Python's block syntax. Coding exercises: summing 1..n and counting evens.",
+                  "estMinutes": 40,
+                  "difficulty": 1,
+                  "prerequisites": [
+                    "py-variables-types"
+                  ],
+                  "masteryTarget": 0.85,
+                  "lesson": {
+                    "title": "Python Control Flow: Branching and Loops",
+                    "estMinutes": 16,
+                    "content": [
+                      {
+                        "type": "markdown",
+                        "title": "The problem it solves",
+                        "content": "Straight-line code runs every statement exactly once — useless for \"repeat this 100 times\" or \"do this only when the input is invalid\". Control flow is what makes programs decide and repeat: branches (if/elif/else) pick a path, loops (for/while) repeat work, and break/continue fine-tune the repetition. In Python the rules are deliberately small — but the indentation rule is absolute, and the truthiness rule changes how you write conditions."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Mental model",
+                        "content": "A program is a flowchart: the interpreter walks it top to bottom, and control-flow statements are the decision diamonds and the loops. `if` is a fork in the road; `for` is a conveyor belt that feeds each item through the body once; `while` is \"keep walking until the condition turns false\".\n\nPython adds one twist: the blocks themselves are defined by *indentation*. The indentation is not style — it is the syntax. Same indentation level = same block; deeper indentation = inside the block."
+                      },
+                      {
+                        "type": "code",
+                        "title": "Simple example",
+                        "content": "def grade(score):\n    if score >= 90:\n        return \"A\"\n    elif score >= 80:\n        return \"B\"\n    elif score >= 70:\n        return \"C\"\n    else:\n        return \"F\"\n\ntotal = 0\nfor i in range(1, 6):        # 1, 2, 3, 4, 5 (stop is exclusive)\n    total += i               # sum 1..5 = 15\nprint(total, grade(85))      # 15 B\n\nn = 0\nwhile n < 3:\n    n += 1                   # must make progress or the loop never ends\nprint(n)                     # 3",
+                        "language": "python"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Why it works: truthiness, range, and iterators",
+                        "content": "Every condition is evaluated for *truthiness*: `0`, `None`, `\"\"`, `[]`, `{}`, `set()` are falsy; everything else is truthy. So `if not items:` is the idiomatic \"if the list is empty\" — no `len(items) == 0` needed.\n\n`range(start, stop, step)` is lazy: it does not build the list, it produces numbers on demand — `range(10**9)` is fine to create. `stop` is exclusive and the default `start` is 0. A `for` loop actually iterates any *iterable*: list, string, dict, file, generator — the loop pulls one item at a time through the iterator protocol, which is why the body runs exactly once per item. And `enumerate` wraps an iterable to also hand you the index, pairing each item with its position."
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Common mistakes",
+                        "content": "1. **Indentation errors.** Mixed tabs and spaces, or a block that should be inside the loop sitting outside it — the second is a *logic* bug that silently changes behavior. `IndentationError` is loud; wrong-but-valid indentation is worse.\n\n2. **`=` instead of `==`.** `if x = 5:` is a syntax error in Python (good news), but `while x = next():`-style assignment confusion still exists — use `walrus := ` only when you really need it.\n\n3. **Forgetting the colon** after `if`, `for`, `while`, `def` — the most common syntax error.\n\n4. **Range stop is exclusive.** `range(1, 5)` gives 1..4, not 1..5. Off-by-one bugs in Python almost always come from forgetting this.\n\n5. **Infinite while.** `while n < 3:` with the increment missing never terminates. `while True` is fine only with a `break` path.\n\n6. **Mutating a list while iterating it.** Removing items during a for loop skips elements (the iterator advances over shifted items). Iterate over a copy (`for x in lst[:]:`) or build a new list.",
+                        "calloutKind": "common-mistake"
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Real-world use",
+                        "content": "Control flow is every program's skeleton. Input-validation loops retry until input is valid; data pipelines loop over rows of CSV files applying per-row rules; retry loops with exponential backoff use while + break + sleep; CLI argument parsing is a cascade of if/elif checks. The for-loop-over-iterable pattern is also how Python's standard library processes files, network sockets, and database cursors — anything that can produce items one at a time.",
+                        "calloutKind": "real-world"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "When NOT to use it",
+                        "content": "- **Transforming a collection** — a list comprehension is clearer and faster than a for loop that appends to a list (`[x * x for x in nums]`).\n- **Filtering** — comprehensions with `if` (`[x for x in nums if x > 0]`) beat loop + append + if.\n- **A fixed number of steps with a known start and end** — that is what `for range` is for; a hand-rolled while just adds a place to get the increment wrong.\n- **Recursion-style problems** — Python's default recursion limit makes deep recursion impractical; prefer loops (or libraries)."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "What you just learned",
+                        "content": "- Blocks are defined by indentation — same level, same block; it is syntax, not style.\n- if/elif/else picks a path; the first truthy branch wins; else is optional.\n- for iterates any iterable; range(start, stop, step) is lazy and stop is exclusive.\n- Truthiness: 0, None, \"\", [], {} are falsy; everything else is truthy.\n- while needs explicit progress; break exits, continue skips to the next iteration; enumerate pairs items with indices."
+                      }
+                    ]
+                  },
+                  "exercises": [
+                    {
+                      "kind": "CODING",
+                      "title": "Sum from 1 to n",
+                      "promptMd": "Write `sum_1_to_n(n)` that returns the sum of all integers from 1 to n inclusive using a for loop over range. For n <= 0, return 0.",
+                      "difficulty": 1,
+                      "estMinutes": 5,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Start a total at 0 and loop `for i in range(1, n + 1):` — remember stop is exclusive."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "Add i to the total each iteration, then return the total."
+                        },
+                        {
+                          "threshold": 3,
+                          "text": "For n <= 0 the range is empty, so total stays 0 — no special case needed."
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "sum_1_to_n",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              1
+                            ],
+                            "expected": 1,
+                            "description": "single"
+                          },
+                          {
+                            "input": [
+                              5
+                            ],
+                            "expected": 15,
+                            "description": "basic"
+                          },
+                          {
+                            "input": [
+                              10
+                            ],
+                            "expected": 55,
+                            "description": "ten"
+                          },
+                          {
+                            "input": [
+                              100
+                            ],
+                            "expected": 5050,
+                            "description": "hundred"
+                          },
+                          {
+                            "input": [
+                              0
+                            ],
+                            "expected": 0,
+                            "description": "zero"
+                          },
+                          {
+                            "input": [
+                              -3
+                            ],
+                            "expected": 0,
+                            "description": "negative"
+                          }
+                        ]
+                      },
+                      "scaffold": "def sum_1_to_n(n):\n    # TODO: return the sum of integers from 1 to n (0 when n <= 0)\n    return 0",
+                      "referenceSolution": "def sum_1_to_n(n):\n    total = 0\n    for i in range(1, n + 1):\n        total += i\n    return total",
+                      "explanationMd": "range(1, n + 1) produces exactly the integers 1..n because stop is exclusive. The empty range for n <= 0 naturally yields 0. This is the canonical for-loop accumulator: an accumulator variable, a range, and an update step.",
+                      "mistakePattern": "off_by_one",
+                      "tags": [
+                        "python",
+                        "loops",
+                        "range"
+                      ]
+                    },
+                    {
+                      "kind": "CODING",
+                      "title": "Count the evens",
+                      "promptMd": "Write `count_evens(n)` that returns how many integers in the range 1..n are even, using a for loop. For n <= 0, return 0. Example: count_evens(10) == 5.",
+                      "difficulty": 1,
+                      "estMinutes": 5,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Loop over range(1, n + 1) with a counter."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "Test evenness with `i % 2 == 0` and increment the counter only then."
+                        },
+                        {
+                          "threshold": 3,
+                          "text": "Negative n: range(1, n + 1) is empty, so the answer is 0."
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "count_evens",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              0
+                            ],
+                            "expected": 0,
+                            "description": "zero"
+                          },
+                          {
+                            "input": [
+                              1
+                            ],
+                            "expected": 0,
+                            "description": "single odd"
+                          },
+                          {
+                            "input": [
+                              2
+                            ],
+                            "expected": 1,
+                            "description": "single even"
+                          },
+                          {
+                            "input": [
+                              10
+                            ],
+                            "expected": 5,
+                            "description": "basic"
+                          },
+                          {
+                            "input": [
+                              100
+                            ],
+                            "expected": 50,
+                            "description": "hundred"
+                          },
+                          {
+                            "input": [
+                              -5
+                            ],
+                            "expected": 0,
+                            "description": "negative"
+                          }
+                        ]
+                      },
+                      "scaffold": "def count_evens(n):\n    # TODO: return the count of even integers in 1..n (0 when n <= 0)\n    return 0",
+                      "referenceSolution": "def count_evens(n):\n    count = 0\n    for i in range(1, n + 1):\n        if i % 2 == 0:\n            count += 1\n    return count",
+                      "explanationMd": "A counter plus a conditional inside a for loop. The modulo operator distinguishes even (i % 2 == 0) from odd. This is the standard 'count items matching a condition' pattern that underlies filtering logic everywhere.",
+                      "mistakePattern": "wrong_operator",
+                      "tags": [
+                        "python",
+                        "loops",
+                        "if",
+                        "modulo"
+                      ]
+                    },
+                    {
+                      "kind": "CONCEPTUAL",
+                      "title": "What does range produce?",
+                      "promptMd": "What values does `range(2, 8, 2)` produce when iterated?",
+                      "difficulty": 1,
+                      "estMinutes": 2,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "range(start, stop, step): stop is exclusive."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "Start at 2, add 2 while below 8: 2, 4, 6."
+                        }
+                      ],
+                      "explanationMd": "2, 4, 6. The stop value 8 is exclusive and the step is 2. The next value would be 8, which is not below stop, so the sequence ends.",
+                      "answer": {
+                        "kind": "mcq",
+                        "options": [
+                          "[2, 4, 6, 8]",
+                          "[2, 4, 6]",
+                          "[2, 4, 6, 8, 10]",
+                          "[4, 6, 8]"
+                        ],
+                        "answerIndex": 1
+                      },
+                      "mistakePattern": "off_by_one",
+                      "tags": [
+                        "python",
+                        "range",
+                        "loops"
+                      ]
+                    },
+                    {
+                      "kind": "TRACING",
+                      "title": "Trace the loop with continue",
+                      "promptMd": "What does this code print?\n\n```python\nresult = 0\nfor i in range(1, 6):\n    if i % 2 == 1:\n        continue\n    result += i\nprint(result)\n```",
+                      "difficulty": 2,
+                      "estMinutes": 4,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "continue skips the rest of the body for this iteration — which values are skipped?"
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "Odd values (1, 3, 5) are skipped; the even values 2 and 4 are added: 2 + 4 = 6."
+                        }
+                      ],
+                      "explanationMd": "continue jumps to the next iteration, so odd values never reach the addition. Only i = 2 and i = 4 add to result: 6. This is the 'skip some items' filtering idiom.",
+                      "answer": {
+                        "kind": "text",
+                        "accepted": [
+                          "6",
+                          "result is 6",
+                          "6 (2 + 4)"
+                        ]
+                      },
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "loops",
+                        "continue",
+                        "trace"
+                      ]
+                    }
+                  ],
+                  "assessment": {
+                    "title": "Control Flow Assessment",
+                    "estMinutes": 7,
+                    "passThreshold": 0.7,
+                    "questions": [
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Which values are FALSY in Python?",
+                        "options": [
+                          "0, None, \"\", [], {}",
+                          "0, \"0\", False",
+                          "None, [], \"None\"",
+                          "Only False and 0"
+                        ],
+                        "answerIndex": 0,
+                        "explanation": "Falsy values: 0, 0.0, None, \"\", [], {}, set(), False. Everything else is truthy — including \"0\", [0], and 0.5.",
+                        "conceptSlug": "py-control-flow",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What does range(5) produce?",
+                        "options": [
+                          "[1, 2, 3, 4, 5]",
+                          "[0, 1, 2, 3, 4]",
+                          "[0, 1, 2, 3, 4, 5]",
+                          "A list of 5 random numbers"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "range with one argument starts at 0 and stops before 5: 0, 1, 2, 3, 4. This is the most common off-by-one source for beginners.",
+                        "conceptSlug": "py-control-flow",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What is the danger of mutating a list while iterating over it with for?",
+                        "options": [
+                          "It always raises a SyntaxError",
+                          "Removing items shifts the rest, so the loop silently skips elements",
+                          "It is perfectly safe and recommended",
+                          "It only works for strings"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "The iterator advances by index; deleting an item shifts later items into the slot the loop has already passed, so they are never visited. Iterate over a copy or build a new list.",
+                        "conceptSlug": "py-control-flow",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Which for loop correctly visits the even numbers from 0 to 100 inclusive?",
+                        "options": [
+                          "for i in range(0, 100, 2):",
+                          "for i in range(0, 101, 2):",
+                          "for i in range(2, 100, 2):",
+                          "for i in range(0, 102, 2):"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "To include 100, the exclusive stop must be at least 101: range(0, 101, 2) yields 0, 2, ..., 100. range(0, 100, 2) stops at 98.",
+                        "conceptSlug": "py-control-flow",
+                        "points": 1
+                      },
+                      {
+                        "kind": "EXPLAIN",
+                        "prompt": "Why is indentation part of Python's SYNTAX and not just a style convention? What goes wrong when a line's indentation accidentally places it outside the loop it belongs to?",
+                        "explanation": "Python has no braces or end-keywords: the block structure IS the indentation. The interpreter groups statements by their indentation level, so a wrongly indented line silently joins a different block. The failure mode is dangerous because it is not a syntax error — the code runs perfectly, just differently: a line that should run inside a loop runs once, or runs after the loop, changing the result. This is why editors that convert tabs to spaces consistently are important, and why accidental outdents are some of the hardest logic bugs to find.",
+                        "conceptSlug": "py-control-flow",
+                        "points": 2
+                      }
+                    ]
+                  }
+                },
+                {
+                  "slug": "py-functions",
+                  "title": "Functions",
+                  "description": "def, parameters, return, default arguments, docstrings, and scope — plus how Python passes object references and why that causes mutation surprises.",
+                  "estMinutes": 40,
+                  "difficulty": 1,
+                  "prerequisites": [
+                    "py-control-flow"
+                  ],
+                  "masteryTarget": 0.85,
+                  "lesson": {
+                    "title": "Python Functions: Reusable Behavior",
+                    "estMinutes": 16,
+                    "content": [
+                      {
+                        "type": "markdown",
+                        "title": "The problem it solves",
+                        "content": "Copy-pasting the same logic into every call site is how bugs multiply: fix the logic in one place and the other five copies stay broken. Functions package behavior under a name with inputs and an output — the single most effective tool for managing complexity. They also give you unit-testable boundaries: a pure function (inputs in, result out, no hidden state) can be tested in isolation, which is why modern codebases are built from thousands of small functions."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Mental model",
+                        "content": "A function is a recipe card: you hand it ingredients (arguments), it performs steps in its own private kitchen (local scope), and hands back a dish (return value). Each call gets a fresh kitchen: local variables from one call do not leak into the next. The recipe card only cares about the ingredients you gave it, not about anything else happening in the house.\n\nBut the ingredients are passed as *references*: if you hand it a list, you are handing the actual list — the function can modify it. If you hand it a number, the number cannot be changed, only used."
+                      },
+                      {
+                        "type": "code",
+                        "title": "Simple example",
+                        "content": "def greet(name, greeting=\"Hello\"):\n    \"\"\"Return a friendly greeting for name.\"\"\"\n    return f\"{greeting}, {name}!\"\n\ndef add(a, b):\n    return a + b\n\nprint(greet(\"Ada\"))                  # Hello, Ada!\nprint(greet(\"Ada\", \"Hi\"))            # Hi, Ada!\nprint(add(2, 3))                     # 5",
+                        "language": "python"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Why it works: call stack, scope, and references",
+                        "content": "Calling a function pushes a new frame onto the call stack: its parameters and locals live there, isolated from the caller's names — that is *scope*. The parameter names are local labels bound to the *objects the caller passed* (Python is pass-by-object-reference). Two consequences follow:\n\n1. **Rebinding inside the function is invisible outside.** `x = x + 1` inside the function just relabels the local name; the caller's variable is untouched.\n2. **Mutating through the reference IS visible outside.** `items.append(1)` changes the object the caller's name also points at.\n\nDefault arguments are evaluated **once, at def time** — which is why `def f(items=[])` shares one list across all calls (the classic mutable-default trap) and why the idiom is `def f(items=None): items = [] if items is None else items`. The `return` statement hands a value back; without it, a function returns `None` by default."
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Common mistakes",
+                        "content": "1. **Forgetting the return.** A function that computes but never returns silently gives you `None`: `result = do_something()` is None and the next line crashes or quietly misbehaves.\n\n2. **Mutable default arguments.** `def add_item(item, lst=[])` shares ONE list across all calls. Use `lst=None` + local initialization instead.\n\n3. **Mutating the caller's data by accident.** If your function appends to its parameter, the caller's list changes. Decide the contract: mutate-in-place (document it) or return a new value and don't touch the input.\n\n4. **Name shadowing.** A local `max` or `list` hides the built-in of the same name in that scope, breaking other uses of it inside the function.\n\n5. **Wrong argument order with positional args.** `greet(\"Hi\", \"Ada\")` passes the greeting as the name. Keyword arguments (`greet(name=\"Ada\", greeting=\"Hi\")`) make call sites self-documenting.\n\n6. **Forgetting the colon** after `def ...(args):` and the blank/consistent indentation of the body.",
+                        "calloutKind": "common-mistake"
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Real-world use",
+                        "content": "The Python standard library is a sea of small functions with crisp contracts, and frameworks are built around calling YOUR functions: Django views are functions receiving a request and returning a response; Flask routes wrap functions; unittest/pytest call your test functions and inspect return values. `sorted` and `max`/`min` take a `key=` function to customize behavior — a pattern (higher-order functions) that lets one library function serve a million shapes of data. Writing small, named, tested functions is how real Python codebases stay comprehensible.",
+                        "calloutKind": "real-world"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "When NOT to use it",
+                        "content": "- **A one-liner expression that is only used once** — a variable holding the result is clearer than a function call.\n- **Functions that only wrap one call** — the indirection adds nothing and hides behavior.\n- **When the abstraction hides what it does** — a function named `process` that mutates three globals is worse than the code it replaced. Prefer pure functions with explicit inputs/outputs.\n- **Deeply nested helper chains** — if understanding `f` requires reading `g`, `h`, and `i`, the decomposition is too fine."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "What you just learned",
+                        "content": "- def + indented body defines a function; parameters are local names bound to caller's objects.\n- return hands a value back; no return means None.\n- Default arguments are evaluated once at def time — never use a mutable default.\n- Reassignment of a parameter is invisible to the caller; mutation of a passed object is not.\n- Docstrings (\"\"\"...\"\"\") document the contract; keyword arguments make call sites readable."
+                      }
+                    ]
+                  },
+                  "exercises": [
+                    {
+                      "kind": "CODING",
+                      "title": "Greet with a default",
+                      "promptMd": "Write `greet(name, greeting=\"Hello\")` that returns the string `f\"{greeting}, {name}!\"`. When the caller omits greeting, it must default to \"Hello\". Example: greet(\"Ada\") -> \"Hello, Ada!\", greet(\"Ada\", \"Hi\") -> \"Hi, Ada!\".",
+                      "difficulty": 1,
+                      "estMinutes": 5,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Declare the default in the signature: `def greet(name, greeting=\"Hello\"):`"
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "Use an f-string: `return f\"{greeting}, {name}!\"`"
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "greet",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              "Ada"
+                            ],
+                            "expected": "Hello, Ada!",
+                            "description": "default greeting"
+                          },
+                          {
+                            "input": [
+                              "Ada",
+                              "Hi"
+                            ],
+                            "expected": "Hi, Ada!",
+                            "description": "custom greeting"
+                          },
+                          {
+                            "input": [
+                              "Sam",
+                              "Greetings"
+                            ],
+                            "expected": "Greetings, Sam!",
+                            "description": "custom greeting 2"
+                          },
+                          {
+                            "input": [
+                              "Bob"
+                            ],
+                            "expected": "Hello, Bob!",
+                            "description": "default greeting 2"
+                          }
+                        ]
+                      },
+                      "scaffold": "def greet(name, greeting=\"Hello\"):\n    # TODO: return f\"{greeting}, {name}!\"\n    return \"\"",
+                      "referenceSolution": "def greet(name, greeting=\"Hello\"):\n    return f\"{greeting}, {name}!\"",
+                      "explanationMd": "Default arguments let callers override behavior without forcing them to always pass every parameter — the signature `greeting=\"Hello\"` is evaluated once at def time and used whenever the caller omits it. f-strings interpolate the two values into the result.",
+                      "mistakePattern": "misread_problem",
+                      "tags": [
+                        "python",
+                        "functions",
+                        "default-args",
+                        "fstrings"
+                      ]
+                    },
+                    {
+                      "kind": "CODING",
+                      "title": "Maximum of three",
+                      "promptMd": "Write `max_of_three(a, b, c)` that returns the largest of the three numbers — without using the built-in max. Handle negative values and ties.",
+                      "difficulty": 2,
+                      "estMinutes": 7,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Use if/elif/else comparisons between the three values."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "`a >= b and a >= c` means a is the max — with >=, ties still work."
+                        },
+                        {
+                          "threshold": 3,
+                          "text": "If neither a nor b is the max, c must be."
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "max_of_three",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              3,
+                              1,
+                              2
+                            ],
+                            "expected": 3,
+                            "description": "first is max"
+                          },
+                          {
+                            "input": [
+                              1,
+                              2,
+                              3
+                            ],
+                            "expected": 3,
+                            "description": "last is max"
+                          },
+                          {
+                            "input": [
+                              1,
+                              1,
+                              1
+                            ],
+                            "expected": 1,
+                            "description": "all equal"
+                          },
+                          {
+                            "input": [
+                              -5,
+                              0,
+                              2
+                            ],
+                            "expected": 2,
+                            "description": "negatives"
+                          },
+                          {
+                            "input": [
+                              1,
+                              2,
+                              2
+                            ],
+                            "expected": 2,
+                            "description": "tie for max"
+                          },
+                          {
+                            "input": [
+                              10,
+                              -10,
+                              0
+                            ],
+                            "expected": 10,
+                            "description": "mixed"
+                          }
+                        ]
+                      },
+                      "scaffold": "def max_of_three(a, b, c):\n    # TODO: return the largest of a, b, c (no built-in max)\n    return a",
+                      "referenceSolution": "def max_of_three(a, b, c):\n    if a >= b and a >= c:\n        return a\n    if b >= a and b >= c:\n        return b\n    return c",
+                      "explanationMd": "The function chain of comparisons: a is the answer if it beats both rivals; otherwise b wins if it beats both; otherwise c must be the largest. Using >= makes ties behave correctly. This 'decide by elimination' structure is a classic branching pattern.",
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "functions",
+                        "conditionals"
+                      ]
+                    },
+                    {
+                      "kind": "CONCEPTUAL",
+                      "title": "The missing return",
+                      "promptMd": "What does this function return?\n\n```python\ndef double(x):\n    x * 2\n```",
+                      "difficulty": 1,
+                      "estMinutes": 2,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "The multiplication happens, but nothing is handed back."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "A function without a return statement returns None by default."
+                        }
+                      ],
+                      "explanationMd": "The function computes x * 2 and discards it — without a return statement, the function returns None. This is one of the most common beginner bugs: forgetting return.",
+                      "answer": {
+                        "kind": "mcq",
+                        "options": [
+                          "2x (the doubled value)",
+                          "None",
+                          "0",
+                          "It raises a TypeError"
+                        ],
+                        "answerIndex": 1
+                      },
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "functions",
+                        "return"
+                      ]
+                    },
+                    {
+                      "kind": "PREDICTION",
+                      "title": "Mutation across the call boundary",
+                      "promptMd": "What does this code print?\n\n```python\ndef add_one(lst):\n    lst.append(1)\n\ndef set_one(lst):\n    lst = [1]\n\nm = []\nadd_one(m)\nset_one(m)\nprint(m)\n```",
+                      "difficulty": 3,
+                      "estMinutes": 5,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "append mutates the object; `lst = [1]` only rebinds the local name."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "The caller's list is the same object throughout, so m still sees the append."
+                        }
+                      ],
+                      "explanationMd": "add_one mutates the shared list object, so m becomes [1]. set_one rebinds the local name lst to a new list — the caller's name m still points at the old object. Prints [1]. Rebinding is invisible to the caller; mutation is not.",
+                      "answer": {
+                        "kind": "text",
+                        "accepted": [
+                          "[1]",
+                          "[1] (append mutates, assignment does not)"
+                        ]
+                      },
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "functions",
+                        "references",
+                        "mutation"
+                      ]
+                    }
+                  ],
+                  "assessment": {
+                    "title": "Functions Assessment",
+                    "estMinutes": 7,
+                    "passThreshold": 0.7,
+                    "questions": [
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What does a Python function return if it has no return statement?",
+                        "options": [
+                          "0",
+                          "The last expression evaluated",
+                          "None",
+                          "An empty string"
+                        ],
+                        "answerIndex": 2,
+                        "explanation": "Without a return statement (or a bare return), the function returns None. Compute-without-return is a classic silent bug.",
+                        "conceptSlug": "py-functions",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Why is `def f(items=[])` dangerous?",
+                        "options": [
+                          "Lists cannot be used as default values",
+                          "The default list is created ONCE at def time and shared by every call that omits the argument",
+                          "It always raises a SyntaxError",
+                          "Defaults only work with immutable types"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "Defaults are evaluated once, when the def runs. Every call that omits items mutates the same shared list. The fix: `def f(items=None): items = [] if items is None else items`.",
+                        "conceptSlug": "py-functions",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "A function does `x = x * 2` on its parameter. The caller's variable...",
+                        "options": [
+                          "doubles, because parameters are passed by reference",
+                          "stays unchanged, because the function only rebinds its own local name",
+                          "doubles only for ints, not for strings",
+                          "raises an error"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "Passing by object-reference means the parameter name points at the caller's object, but `x = x * 2` REBINDS the local name to a new object. The caller's name still points at the original.",
+                        "conceptSlug": "py-functions",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What is the purpose of a docstring?",
+                        "options": [
+                          "It is a comment that the interpreter ignores",
+                          "It documents the function's contract — what it does, its arguments, and its return — and is visible via help()",
+                          "It makes the function run faster",
+                          "It defines the function's return type"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "A docstring (the first string literal in the body) is the function's documentation; help(func) and tools render it. It is not compiled away — it is real, inspectable data.",
+                        "conceptSlug": "py-functions",
+                        "points": 1
+                      },
+                      {
+                        "kind": "EXPLAIN",
+                        "prompt": "Explain the difference between rebinding a parameter and mutating the object it points to, and give one example of a real-world bug caused by confusing the two.",
+                        "explanation": "Rebinding (`x = new_value`) only changes what the local name points at — the caller's variable is unaffected. Mutating (`x.append(...)`, `x[key] = v`) changes the shared object itself, so the caller sees the change. A classic real-world bug: a helper that is supposed to filter a list does `data = [d for d in data if d.ok]` — rebinding, caller unaffected — but the caller expects the filtering to happen, so the old list keeps flowing downstream. Conversely, a function that appends to its input list when the caller expected it untouched corrupts the caller's data. The fix is a clear contract: mutate-in-place or return-new, and say which in the docstring.",
+                        "conceptSlug": "py-functions",
+                        "points": 2
+                      }
+                    ]
+                  }
+                },
+                {
+                  "slug": "py-lists",
+                  "title": "Lists",
+                  "description": "The workhorse ordered collection: append/index/slice/comprehension, mutability vs immutability, alias vs copy, and identity vs equality for lists.",
+                  "estMinutes": 45,
+                  "difficulty": 1,
+                  "prerequisites": [
+                    "py-variables-types",
+                    "py-control-flow"
+                  ],
+                  "masteryTarget": 0.85,
+                  "lesson": {
+                    "title": "Python Lists: Ordered, Mutable, Everywhere",
+                    "estMinutes": 18,
+                    "content": [
+                      {
+                        "type": "markdown",
+                        "title": "The problem it solves",
+                        "content": "Almost every program collects values: rows from a CSV, results of a computation, items in a cart. Python's list is the default collection for ordered data — an automatically-growing sequence you can index, slice, append to, and iterate. Understanding lists deeply (slicing, aliasing, copying) prevents the most common data-corruption bugs in Python code, and the comprehension syntax you learn here is the single most-used idiom in real Python."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Mental model",
+                        "content": "A list is an ordered row of lockers. Each locker holds one *reference* to an object — the objects themselves live elsewhere. The list is a dynamic array under the hood (the same doubling growth strategy as C++ vector), which is why indexing is instant and appending is cheap on average.\n\nThe lockers can point at anything — numbers, strings, other lists — because the list stores references, not copies. When you see `b = a`, imagine handing someone a duplicate key to the SAME row of lockers, not a new row."
+                      },
+                      {
+                        "type": "code",
+                        "title": "Simple example",
+                        "content": "nums = [3, 1, 4]\nnums.append(1)          # [3, 1, 4, 1] — mutate in place\nprint(nums[0], nums[-1])  # 3 1 (negative indices count from the end)\nprint(nums[1:3])        # [1, 4] — slice: start inclusive, stop exclusive\nprint(nums[::-1])       # [1, 4, 1, 3] — reversed copy via slicing\n\nsquares = [x * x for x in range(5)]   # [0, 1, 4, 9, 16] — comprehension\nevens = [x for x in nums if x % 2 == 0]  # [4] — comprehension with filter\n\nprint(3 in nums, len(nums))  # True 4",
+                        "language": "python"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Why it works: dynamic array of references",
+                        "content": "Python's list is a contiguous array of PyObject* pointers with the doubling growth strategy: indexing is O(1) pointer arithmetic, iteration is a tight sequential walk, and appending is amortized O(1). Slicing (`lst[a:b:s]`) builds a NEW list of the selected references — a shallow copy, meaning the new list holds references to the same objects (mutating a shared nested list inside a slice still affects the original).\n\nComprehensions are not magic: `[expr for x in iterable if cond]` compiles to a loop that appends to a list — but written as an expression, it is clearer and faster (the loop runs in C-level bytecode without repeated lookups of append). The `if` filter, nested `for` clauses, and `enumerate` all compose inside the syntax. And because lists are mutable while tuples and strings are not, `lst[0] = 5` works, `tup[0] = 5` raises, and `s[0] = \"x\"` raises."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Identity vs equality for lists",
+                        "content": "`a == b` compares lists *element-wise by value*: `[1, 2] == [1, 2]` is True. `a is b` asks whether both names point at the *same list object*. Slicing and `list()` always produce new objects, so `a = [1, 2]; b = a[:]` gives `a == b` True but `a is b` False. The practical rules: use `==` to compare contents, use `is` only to check for the exact same object (or None), and remember that a *copy* is a different object that happens to contain the same references."
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Common mistakes",
+                        "content": "1. **Aliasing instead of copying.** `b = a` does not copy; `b.append(1)` changes a too. Copy with `a[:]`, `a.copy()`, or `list(a)` (a deep copy needs `copy.deepcopy` for nested structures).\n\n2. **Slice bound confusion.** `a[:2]` is positions 0,1 (stop exclusive); `a[-1]` is the last element; `a[-3:]` is the last three. A common bug: `a[1:3]` expecting three elements and getting two.\n\n3. **Mutating while iterating.** Removing elements during a for loop skips items. Iterate over a copy (`for x in lst[:]:`) or build a new list / comprehension.\n\n4. **Modifying a slice in place.** `a[:] = [...]` replaces the contents of a (in place, good); but `b = a[:]` then mutating b does NOT touch a (that is the point — don't expect it to).\n\n5. **Using + and * carelessly.** `[0] * 5` is [0,0,0,0,0] (fine) but `[[]] * 3` gives THREE references to the SAME inner list — mutating one shows up in all three. Use a comprehension `[[] for _ in range(3)]`.\n\n6. **Assuming indexing works on strings' neighbors.** Slicing works on strings and tuples too, but assignment (`s[0] = \"x\"`) does not — they are immutable.",
+                        "calloutKind": "common-mistake"
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Real-world use",
+                        "content": "Lists are everywhere in real Python: CSV and JSON parsing return lists of records; data pipelines hold intermediate rows in lists; frameworks pass lists of query results, form values, and configuration items; games and grids store boards as lists of lists; matplotlib and pandas accept plain lists as input. The comprehension is the idiom of choice for transforming data — `[row[\"name\"] for row in rows if row[\"age\"] > 18]` reads like a sentence. When performance at scale matters, the same intuition (contiguous storage) transfers to numpy arrays.",
+                        "calloutKind": "real-world"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "When NOT to use it",
+                        "content": "- **Huge numeric data** — numpy arrays store raw numbers contiguously with no per-element object overhead; a Python list of 10 million floats costs ~10x the memory.\n- **Frequent insertion/removal at the FRONT** — list.insert(0, x) is O(n); use collections.deque for queue-like work.\n- **Fixed, never-changing collections** — tuples are immutable, hashable (usable as dict keys), and slightly faster.\n- **Lookups by key, not position** — that is a dict's job (O(1) vs O(n) scan).\n- **Items must survive identity checks across copies** — remember every slice/copy creates a NEW list object."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "What you just learned",
+                        "content": "- Lists are dynamic arrays of references: O(1) indexing, amortized O(1) append, contiguous iteration.\n- Slicing lst[a:b:s] makes a new (shallow) list; stop is exclusive; negatives count from the end.\n- b = a aliases; a[:] / a.copy() / list(a) copy — and deepcopy for nested structures.\n- Comprehensions [expr for x in it if cond] are the idiomatic transform/filter tool.\n- == compares contents; is compares object identity; copies are new objects with equal contents."
+                      }
+                    ]
+                  },
+                  "exercises": [
+                    {
+                      "kind": "CODING",
+                      "title": "Maximum of a list",
+                      "promptMd": "Write `list_max(numbers)` that returns the largest value in the list. If the list is empty, return None. Do not use the built-in max function.",
+                      "difficulty": 1,
+                      "estMinutes": 5,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Handle the empty list first: return None."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "Start with best = numbers[0], then compare each element with a for loop, updating best when larger."
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "list_max",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              [
+                                3,
+                                1,
+                                2
+                              ]
+                            ],
+                            "expected": 3,
+                            "description": "basic"
+                          },
+                          {
+                            "input": [
+                              [
+                                7
+                              ]
+                            ],
+                            "expected": 7,
+                            "description": "single element"
+                          },
+                          {
+                            "input": [
+                              [
+                                -1,
+                                -5
+                              ]
+                            ],
+                            "expected": -1,
+                            "description": "negatives"
+                          },
+                          {
+                            "input": [
+                              []
+                            ],
+                            "expected": null,
+                            "description": "empty list"
+                          },
+                          {
+                            "input": [
+                              [
+                                1,
+                                2,
+                                3,
+                                4,
+                                5
+                              ]
+                            ],
+                            "expected": 5,
+                            "description": "ascending"
+                          },
+                          {
+                            "input": [
+                              [
+                                10,
+                                9,
+                                8,
+                                11
+                              ]
+                            ],
+                            "expected": 11,
+                            "description": "max at end"
+                          }
+                        ]
+                      },
+                      "scaffold": "def list_max(numbers):\n    # TODO: return the largest value, or None if the list is empty\n    return None",
+                      "referenceSolution": "def list_max(numbers):\n    if not numbers:\n        return None\n    best = numbers[0]\n    for x in numbers:\n        if x > best:\n            best = x\n    return best",
+                      "explanationMd": "The empty check uses truthiness (an empty list is falsy). best starts as the first element and is updated whenever a larger value appears — the canonical scan-for-maximum pattern. Note the `if not numbers:` idiom instead of len(numbers) == 0.",
+                      "mistakePattern": "boundary_check",
+                      "tags": [
+                        "python",
+                        "lists",
+                        "iteration"
+                      ]
+                    },
+                    {
+                      "kind": "CODING",
+                      "title": "Reverse with a slice",
+                      "promptMd": "Write `reverse_list(lst)` that returns a NEW list containing the elements of lst in reverse order. Use slicing — do not use the .reverse() method or reversed(). The original list must not be modified.",
+                      "difficulty": 1,
+                      "estMinutes": 4,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "The slice step of -1 reverses: lst[::-1]."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "Slicing always creates a new list, so the original stays untouched."
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "reverse_list",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              [
+                                1,
+                                2,
+                                3
+                              ]
+                            ],
+                            "expected": [
+                              3,
+                              2,
+                              1
+                            ],
+                            "description": "basic"
+                          },
+                          {
+                            "input": [
+                              []
+                            ],
+                            "expected": [],
+                            "description": "empty"
+                          },
+                          {
+                            "input": [
+                              [
+                                5
+                              ]
+                            ],
+                            "expected": [
+                              5
+                            ],
+                            "description": "single"
+                          },
+                          {
+                            "input": [
+                              [
+                                1,
+                                2,
+                                3,
+                                4
+                              ]
+                            ],
+                            "expected": [
+                              4,
+                              3,
+                              2,
+                              1
+                            ],
+                            "description": "four elements"
+                          },
+                          {
+                            "input": [
+                              [
+                                "a",
+                                "b"
+                              ]
+                            ],
+                            "expected": [
+                              "b",
+                              "a"
+                            ],
+                            "description": "strings"
+                          }
+                        ]
+                      },
+                      "scaffold": "def reverse_list(lst):\n    # TODO: return a new list with the elements reversed (use slicing)\n    return []",
+                      "referenceSolution": "def reverse_list(lst):\n    return lst[::-1]",
+                      "explanationMd": "lst[::-1] is a full slice with step -1: it walks the list backwards, producing a new reversed list. Because slicing copies the references into a new list object, the original is never modified — the 'return new, don't mutate' contract that avoids surprising callers.",
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "lists",
+                        "slicing"
+                      ]
+                    },
+                    {
+                      "kind": "CODING",
+                      "title": "Squares with a comprehension",
+                      "promptMd": "Write `squares(n)` that returns a list of the squares of 1..n using a list comprehension. Example: squares(3) == [1, 4, 9]. For n <= 0 return an empty list.",
+                      "difficulty": 1,
+                      "estMinutes": 4,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "A comprehension is [expression for variable in iterable]."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "[i * i for i in range(1, n + 1)]"
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "squares",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              3
+                            ],
+                            "expected": [
+                              1,
+                              4,
+                              9
+                            ],
+                            "description": "basic"
+                          },
+                          {
+                            "input": [
+                              1
+                            ],
+                            "expected": [
+                              1
+                            ],
+                            "description": "single"
+                          },
+                          {
+                            "input": [
+                              0
+                            ],
+                            "expected": [],
+                            "description": "zero"
+                          },
+                          {
+                            "input": [
+                              5
+                            ],
+                            "expected": [
+                              1,
+                              4,
+                              9,
+                              16,
+                              25
+                            ],
+                            "description": "five"
+                          },
+                          {
+                            "input": [
+                              -2
+                            ],
+                            "expected": [],
+                            "description": "negative"
+                          }
+                        ]
+                      },
+                      "scaffold": "def squares(n):\n    # TODO: return [1, 4, 9, ...] up to n using a list comprehension\n    return []",
+                      "referenceSolution": "def squares(n):\n    return [i * i for i in range(1, n + 1)]",
+                      "explanationMd": "The comprehension reads as a sentence: 'the list of i*i for each i in range(1, n+1)'. range(1, n+1) produces exactly 1..n, so n <= 0 naturally yields an empty list. This is the idiomatic transform — a loop with append in one expression.",
+                      "mistakePattern": "off_by_one",
+                      "tags": [
+                        "python",
+                        "lists",
+                        "comprehension"
+                      ]
+                    },
+                    {
+                      "kind": "CONCEPTUAL",
+                      "title": "Alias or copy?",
+                      "promptMd": "What is the value of a after this code runs?\n\n```python\na = [1, 2, 3]\nb = a\nb.append(4)\n```",
+                      "difficulty": 2,
+                      "estMinutes": 3,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "b = a copies only the reference — both names point at the same list object."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "append mutates that shared object."
+                        }
+                      ],
+                      "explanationMd": "a is [1, 2, 3, 4]. b = a is an alias, not a copy: append mutated the one shared list, which a still points at. To avoid this, copy explicitly (a[:], a.copy(), list(a)).",
+                      "answer": {
+                        "kind": "mcq",
+                        "options": [
+                          "[1, 2, 3]",
+                          "[1, 2, 3, 4]",
+                          "[]",
+                          "It raises an error because a was rebound"
+                        ],
+                        "answerIndex": 1
+                      },
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "lists",
+                        "alias",
+                        "copy"
+                      ]
+                    }
+                  ],
+                  "assessment": {
+                    "title": "Lists Assessment",
+                    "estMinutes": 8,
+                    "passThreshold": 0.7,
+                    "questions": [
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What does `nums[1:4]` return for `nums = [0, 1, 2, 3, 4, 5]`?",
+                        "options": [
+                          "[1, 2, 3, 4]",
+                          "[1, 2, 3]",
+                          "[0, 1, 2, 3]",
+                          "[2, 3, 4]"
+                        ],
+                        "answerIndex": 0,
+                        "explanation": "Slices are start-inclusive, stop-exclusive: positions 1, 2, 3, 4 — four elements. The most common slice bug is expecting the stop index to be included.",
+                        "conceptSlug": "py-lists",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Why does `[[]] * 3` behave dangerously?",
+                        "options": [
+                          "It is a syntax error",
+                          "It creates a list containing THREE references to the SAME inner list, so mutating one mutates all",
+                          "It creates a list of three independent empty lists",
+                          "It creates a tuple"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "The * operator repeats the reference, not the value: the inner list object is created once and referenced three times. Use [[ ] for _ in range(3)] for independent lists.",
+                        "conceptSlug": "py-lists",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Which expression creates a genuine COPY of the list a?",
+                        "options": [
+                          "b = a",
+                          "b = a[:]",
+                          "b = [a]",
+                          "b = a and a"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "a[:] slices the whole list into a new list object holding the same references. b = a aliases. [a] wraps the list inside another list.",
+                        "conceptSlug": "py-lists",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What does this print?\n\nx = [1, 2, 3]\ny = x[:]\ny[0] = 99\nprint(x)",
+                        "options": [
+                          "[1, 2, 3]",
+                          "[99, 2, 3]",
+                          "[1, 2, 3, 99]",
+                          "It raises an error"
+                        ],
+                        "answerIndex": 0,
+                        "explanation": "y = x[:] copied the list, so mutating y[0] does not touch x. Copies break the alias chain — x stays [1, 2, 3].",
+                        "conceptSlug": "py-lists",
+                        "points": 1
+                      },
+                      {
+                        "kind": "EXPLAIN",
+                        "prompt": "Explain why a list comprehension like `[x * 2 for x in nums if x > 0]` is preferred over a manual for loop with append, and describe exactly what the comprehension does internally.",
+                        "explanation": "The comprehension is a single expression that reads as 'the list of x*2 for each x in nums, keeping only those with x > 0' — it is shorter, declares intent rather than mechanics, and avoids the noise of an accumulator variable and append call. Internally it compiles to a hidden loop that evaluates the filter condition for each element and appends the expression's result to a new list, essentially the same steps as the manual version but in optimized bytecode with the append lookup hoisted. The result is clearer code and typically better performance, so comprehensions are the idiomatic transform-and-filter tool.",
+                        "conceptSlug": "py-lists",
+                        "points": 2
+                      }
+                    ]
+                  }
+                },
+                {
+                  "slug": "py-dicts",
+                  "title": "Dictionaries",
+                  "description": "Key-value storage backed by a hash table: dict operations, why keys must be hashable, hashing and collisions, .get vs [], and counting patterns.",
+                  "estMinutes": 45,
+                  "difficulty": 1,
+                  "prerequisites": [
+                    "py-lists"
+                  ],
+                  "masteryTarget": 0.85,
+                  "lesson": {
+                    "title": "Python Dictionaries: Labeled, Instant Lookups",
+                    "estMinutes": 18,
+                    "content": [
+                      {
+                        "type": "markdown",
+                        "title": "The problem it solves",
+                        "content": "Finding a value by scanning a list is O(n) per query — miserable when you look things up thousands of times (user profiles by ID, words by spelling, files by path). A dict stores values *under labels* and retrieves them in average O(1): the same lookup that costs a million steps in a list costs one dict access. Dictionaries are also Python's data-model backbone — attributes, globals, locals, keyword arguments, and JSON are all dicts. Learn them well and you learn how Python itself works."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Mental model",
+                        "content": "A dict is a filing cabinet where each drawer is labeled and you file/retrieve by label, not by position: `d[key] = value` files it, `d[key]` retrieves it, `key in d` checks the drawer exists — all in about the same instant regardless of how many drawers there are.\n\nThe magic is the label: each key is converted by the `hash()` function into a number that decides the drawer. That is why labels (keys) must be *hashable* — stable, immutable values like strings, numbers, and tuples — and why lists can never be labels: their contents can change, which would break the numbering system."
+                      },
+                      {
+                        "type": "code",
+                        "title": "Simple example",
+                        "content": "scores = {\"ada\": 95, \"grace\": 88}\nscores[\"alan\"] = 91                # insert or update\nprint(scores[\"ada\"])               # 95 — O(1) lookup\nprint(scores.get(\"bob\", 0))        # 0 — safe lookup with default\nprint(\"ada\" in scores)             # True\nfor name, score in scores.items():  # (key, value) pairs, insertion order\n    print(name, score)\n\ncounts = {}\nfor ch in \"hello\":\n    counts[ch] = counts.get(ch, 0) + 1   # the counting idiom\nprint(counts)                      # {'h': 1, 'e': 1, 'l': 2, 'o': 1}",
+                        "language": "python"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "Why it works: hash tables",
+                        "content": "A dict is a hash table: `d[k]` computes `hash(k)`, maps that number to a bucket (a small array slot, in CPython a sparse array of entries), and finds the value there. Hash lookups are average O(1) because the bucket is found by arithmetic, not by scanning.\n\nTwo consequences matter. First, **collisions**: two keys can hash to the same bucket; the table resolves them and the average case stays O(1) only while the table is sparse enough — when load grows, the dict resizes (and rehashes all keys) to keep lookups cheap, which is why iteration order can change across rebuilds (though since 3.7 the order of a given dict is its insertion order). Second, **hashability**: the key must be immutable during its whole lifetime inside the dict — a mutable key whose hash changed would be unfindable. Strings, numbers, and tuples of hashables qualify; lists, dicts, and sets do not."
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Common mistakes",
+                        "content": "1. **Bare `d[key]` raising KeyError.** `d[\"bob\"]` on a dict without that key crashes. Use `d.get(\"bob\", default)` when absence is possible, or check `key in d` first.\n\n2. **Mutating a dict while iterating it.** Adding or removing keys during `for k in d:` raises RuntimeError (or silently misbehaves). Iterate over a snapshot: `for k in list(d):`.\n\n3. **Unhashable keys.** `d[[1, 2]] = 3` raises TypeError — lists are mutable. The fix is almost always a tuple (`d[(1, 2)] = 3`).\n\n4. **Aliasing dicts.** `d2 = d1` copies the reference; `d2[\"x\"] = 1` changes d1. Copy with `d1.copy()` or `dict(d1)` (shallow).\n\n5. **Expecting order to be unpredictable.** Since Python 3.7 dicts preserve insertion order — code that relied on randomness was already wrong, and code that relies on order is fine as long as it uses 3.7+.\n\n6. **Using a dict where a set fits.** If you only check membership (`key in d`), a set is the right tool — same hashing, no value storage.",
+                        "calloutKind": "common-mistake"
+                      },
+                      {
+                        "type": "callout",
+                        "title": "Real-world use",
+                        "content": "JSON is dicts: `json.loads(...)` returns nested dicts, and web APIs are consumed as dict chains (`data[\"users\"][0][\"name\"]`). Caches (memoization, LRU caches, HTTP response caches) are dicts keyed by request; `functools.lru_cache` is a dict under the hood. Symbol tables in interpreters, configs, database row lookups by primary key, and word-count pipelines all lean on dicts. Python's own internals — namespaces, attributes, class dicts — are dicts. When you see \"look up by label\", the engineering answer is a hash table.",
+                        "calloutKind": "real-world"
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "When NOT to use it",
+                        "content": "- **Contiguous integer keys** — `{0: a, 1: b, 2: c}` is a list (or tuple) in disguise; lists index faster and use less memory.\n- **Keys must stay sorted** — dicts order by insertion, not by key. Use sorted keys on access, or a tree-based structure for ongoing order.\n- **Memory is the constraint** — hash tables carry bucket overhead; a list of pairs may be far smaller.\n- **You need custom equality semantics** (two different objects equal by contents) — make them hashable (hash + eq) or rethink the data shape."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "The counting and grouping patterns",
+                        "content": "The dict's superpower is accumulation by label. The canonical counting idiom — `counts[key] = counts.get(key, 0) + 1` — is one line and reads as \"increment the counter for key\". Grouping works the same way: `groups.setdefault(key, []).append(value)` ensures the bucket exists before appending. `collections.defaultdict` and `collections.Counter` automate both patterns. These idioms are everywhere in data processing: counting words, tagging records, building indices."
+                      },
+                      {
+                        "type": "markdown",
+                        "title": "What you just learned",
+                        "content": "- Dicts store values under keys with average O(1) get/set, backed by a hash table.\n- Keys must be hashable (immutable): strings, numbers, tuples — never lists or dicts.\n- d[key] raises KeyError; d.get(key, default) is the safe lookup; key in d tests membership.\n- Since 3.7 iteration order is insertion order; resizing rehashes (order of existing keys is preserved).\n- Counting: d[k] = d.get(k, 0) + 1; copying: d.copy() (aliasing with = does not copy)."
+                      }
+                    ]
+                  },
+                  "exercises": [
+                    {
+                      "kind": "CODING",
+                      "title": "Count the characters",
+                      "promptMd": "Write `count_chars(s)` that returns a dict mapping each character of the string `s` to the number of times it appears. Use the `d.get(key, 0)` counting idiom — not collections.Counter. Empty string returns an empty dict.",
+                      "difficulty": 2,
+                      "estMinutes": 8,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Loop over the string; each character is a key."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "`counts[ch] = counts.get(ch, 0) + 1` — get returns the old count or 0."
+                        },
+                        {
+                          "threshold": 3,
+                          "text": "Spaces and punctuation are characters too — count them. An empty string gives {}."
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "count_chars",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              "hello"
+                            ],
+                            "expected": {
+                              "h": 1,
+                              "e": 1,
+                              "l": 2,
+                              "o": 1
+                            },
+                            "description": "basic"
+                          },
+                          {
+                            "input": [
+                              ""
+                            ],
+                            "expected": {},
+                            "description": "empty string"
+                          },
+                          {
+                            "input": [
+                              "aaa"
+                            ],
+                            "expected": {
+                              "a": 3
+                            },
+                            "description": "all same"
+                          },
+                          {
+                            "input": [
+                              "abba"
+                            ],
+                            "expected": {
+                              "a": 2,
+                              "b": 2
+                            },
+                            "description": "two chars"
+                          },
+                          {
+                            "input": [
+                              "ab cd ab"
+                            ],
+                            "expected": {
+                              "a": 2,
+                              "b": 2,
+                              " ": 2,
+                              "c": 1,
+                              "d": 1
+                            },
+                            "description": "spaces count"
+                          }
+                        ]
+                      },
+                      "scaffold": "def count_chars(s):\n    # TODO: return a dict of character -> count\n    return {}",
+                      "referenceSolution": "def count_chars(s):\n    counts = {}\n    for ch in s:\n        counts[ch] = counts.get(ch, 0) + 1\n    return counts",
+                      "explanationMd": "The counting idiom: get() returns the current count (or 0 for a first occurrence) and + 1 increments it before storing. Iterating a string yields one character at a time. The same pattern counts words, log levels, or any labelable items.",
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "dicts",
+                        "counting"
+                      ]
+                    },
+                    {
+                      "kind": "CODING",
+                      "title": "Get with a default",
+                      "promptMd": "Write `get_or_default(d, key, default)` that returns `d[key]` when `key` is present, otherwise `default`. Use the dict .get method.",
+                      "difficulty": 1,
+                      "estMinutes": 4,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "dict.get(key, default) does exactly this."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "return d.get(key, default)"
+                        }
+                      ],
+                      "harness": {
+                        "language": "python",
+                        "entryFn": "get_or_default",
+                        "args": "auto",
+                        "comparator": "exact",
+                        "testCases": [
+                          {
+                            "input": [
+                              {
+                                "a": 1
+                              },
+                              "a",
+                              0
+                            ],
+                            "expected": 1,
+                            "description": "key present"
+                          },
+                          {
+                            "input": [
+                              {
+                                "a": 1
+                              },
+                              "b",
+                              0
+                            ],
+                            "expected": 0,
+                            "description": "key absent"
+                          },
+                          {
+                            "input": [
+                              {},
+                              "x",
+                              "missing"
+                            ],
+                            "expected": "missing",
+                            "description": "empty dict, string default"
+                          },
+                          {
+                            "input": [
+                              {
+                                "a": 1
+                              },
+                              "b",
+                              99
+                            ],
+                            "expected": 99,
+                            "description": "absent, numeric default"
+                          }
+                        ]
+                      },
+                      "scaffold": "def get_or_default(d, key, default):\n    # TODO: return d[key] if present, else default\n    return default",
+                      "referenceSolution": "def get_or_default(d, key, default):\n    return d.get(key, default)",
+                      "explanationMd": ".get is the safe-lookup idiom: it never raises KeyError and returns the caller's default for missing keys. This is the difference between `d[key]` (crash on absence) and production-style lookups.",
+                      "mistakePattern": "boundary_check",
+                      "tags": [
+                        "python",
+                        "dicts",
+                        "get"
+                      ]
+                    },
+                    {
+                      "kind": "CONCEPTUAL",
+                      "title": "Which values can be dict keys?",
+                      "promptMd": "Which of these can be used as a dict key without raising a TypeError?",
+                      "difficulty": 2,
+                      "estMinutes": 3,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Keys must be hashable — their hash must never change."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "Immutable types qualify; mutable containers (list, dict, set) do not. Tuples qualify if their contents do."
+                        }
+                      ],
+                      "explanationMd": "Strings, numbers, and tuples of hashable values are hashable. Lists and dicts are mutable — their hash would change if their contents changed, so Python refuses them as keys (TypeError: unhashable type).",
+                      "answer": {
+                        "kind": "mcq",
+                        "options": [
+                          "[\"a\", \"b\"] (a list)",
+                          "{\"x\": 1} (a dict)",
+                          "(\"a\", 1) (a tuple)",
+                          "Both a list and a dict"
+                        ],
+                        "answerIndex": 2
+                      },
+                      "mistakePattern": "type_error",
+                      "tags": [
+                        "python",
+                        "dicts",
+                        "hashing"
+                      ]
+                    },
+                    {
+                      "kind": "TRACING",
+                      "title": "Trace the dict operations",
+                      "promptMd": "What does this code print?\n\n```python\nd = {}\nd[\"a\"] = 1\nd[\"b\"] = 2\nprint(len(d))\nprint(d.get(\"c\", 0))\nd[\"a\"] = 10\nprint(d[\"a\"])\n```",
+                      "difficulty": 2,
+                      "estMinutes": 4,
+                      "hints": [
+                        {
+                          "threshold": 1,
+                          "text": "Assigning to an existing key overwrites; to a new key inserts."
+                        },
+                        {
+                          "threshold": 2,
+                          "text": "get with a missing key returns the default 0; len counts keys."
+                        }
+                      ],
+                      "explanationMd": "len(d) is 2 after two inserts. d.get(\"c\", 0) returns 0 because \"c\" is absent. d[\"a\"] = 10 overwrites the value at key \"a\", so d[\"a\"] is 10. Output: 2, 0, 10.",
+                      "answer": {
+                        "kind": "text",
+                        "accepted": [
+                          "2 0 10",
+                          "2, 0, 10",
+                          "2 0 10 (each on its own line)"
+                        ]
+                      },
+                      "mistakePattern": "logic_error",
+                      "tags": [
+                        "python",
+                        "dicts",
+                        "trace"
+                      ]
+                    }
+                  ],
+                  "assessment": {
+                    "title": "Dictionaries Assessment",
+                    "estMinutes": 8,
+                    "passThreshold": 0.7,
+                    "questions": [
+                      {
+                        "kind": "MCQ",
+                        "prompt": "Why must dict keys be immutable (hashable)?",
+                        "options": [
+                          "Immutable keys are faster to compare",
+                          "The dict stores the key's hash to find it; if the key could change, the stored position would no longer match",
+                          "Python simply disallows mutable types for no deep reason",
+                          "Immutable keys use less memory"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "Lookup computes hash(key) to find the bucket. If a key's contents changed after insertion, its hash would change and the entry would become unfindable — corrupting the table.",
+                        "conceptSlug": "py-dicts",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What is the difference between d[\"x\"] and d.get(\"x\", 0) when \"x\" is absent?",
+                        "options": [
+                          "Both return 0",
+                          "d[\"x\"] raises KeyError; d.get(\"x\", 0) returns 0",
+                          "Both raise KeyError",
+                          "d[\"x\"] returns None; d.get(\"x\", 0) returns 0"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "Subscript access raises KeyError on missing keys; .get returns the provided default (or None). The idiom is: use [] when absence is an error, .get when it is a normal case.",
+                        "conceptSlug": "py-dicts",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What happens when you add or remove keys while iterating a dict with for?",
+                        "options": [
+                          "It is perfectly safe",
+                          "It raises RuntimeError (dict changed size during iteration)",
+                          "It silently skips some keys",
+                          "It converts the dict to a list"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "CPython detects size changes during iteration and raises RuntimeError. Iterate over a snapshot (list(d) or list(d.items())) to mutate safely.",
+                        "conceptSlug": "py-dicts",
+                        "points": 1
+                      },
+                      {
+                        "kind": "MCQ",
+                        "prompt": "What does this print?\n\nd = {\"a\": 1}\nd2 = d\nd2[\"b\"] = 2\nprint(d)",
+                        "options": [
+                          "{'a': 1}",
+                          "{'a': 1, 'b': 2}",
+                          "{'b': 2}",
+                          "It raises KeyError"
+                        ],
+                        "answerIndex": 1,
+                        "explanation": "d2 = d copies the reference, so both names point at the same dict; inserting through d2 is visible through d. Copy explicitly (d.copy()) to isolate.",
+                        "conceptSlug": "py-dicts",
+                        "points": 1
+                      },
+                      {
+                        "kind": "EXPLAIN",
+                        "prompt": "Explain how a hash table makes dict lookups average O(1), what happens when two keys hash to the same bucket (collision), and why Python resizes the table.",
+                        "explanation": "Lookup computes hash(key) and uses arithmetic (modulo the table size) to jump directly to the bucket that would hold the key — no scanning, so the cost is independent of the number of keys: average O(1). Collisions happen when different keys land in the same bucket; the table handles them (probing/separate entries) at a small cost, and as long as the table stays sparse the average stays O(1). When too many keys pile in, Python resizes (typically 2-4x) and rehashes every entry into the bigger table, restoring sparse buckets — the same amortized-growth story as a dynamic array. This is why a million-key dict and a ten-key dict do lookups in nearly the same time.",
+                        "conceptSlug": "py-dicts",
+                        "points": 2
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

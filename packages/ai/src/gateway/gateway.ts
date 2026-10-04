@@ -7,8 +7,10 @@ import type {
   JobRef,
   ChatMessage,
   AIErrorKind,
+  StreamChunk,
 } from "../contracts.js";
 import type { AIProvider } from "../provider.js";
+import { StreamingProvider } from "../streaming-provider.js";
 import type { ProviderRegistry } from "./provider-registry.js";
 import type { CircuitBreaker } from "./circuit-breaker.js";
 import type { QuotaManager } from "./quota.js";
@@ -528,6 +530,40 @@ export class AIGatewayImpl implements AIGateway {
       jobId: req.jobId ?? crypto.randomUUID(),
       status: "QUEUED",
     };
+  }
+
+  requestStream(req: AIRequest): AsyncIterable<StreamChunk> {
+    const requestId = req.requestId || crypto.randomUUID();
+
+    const models = this.registry.listModels();
+    if (models.length === 0) {
+      throw new Error("No providers available for streaming");
+    }
+
+    const routingDecision = this.router.route(
+      req.taskType,
+      req.requiredCapabilities ?? [],
+      req.priority,
+    );
+
+    if (!routingDecision) {
+      throw new Error("No route available for streaming request");
+    }
+
+    const providerConfig = this.registry.getProvider(routingDecision.providerId);
+    if (!providerConfig) {
+      throw new Error(`Provider ${routingDecision.providerId} not found`);
+    }
+
+    const streaming = new StreamingProvider({
+      baseUrl: providerConfig.baseUrl,
+      apiKey: providerConfig.apiKey,
+      model: routingDecision.modelId,
+      providerType: "openai",
+      timeoutMs: req.timeoutMs,
+    });
+
+    return streaming.stream(req.messages);
   }
 
   getRawProvider(): RawProvider {

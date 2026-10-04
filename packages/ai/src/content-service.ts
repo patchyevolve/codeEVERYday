@@ -123,19 +123,41 @@ export class ContentService {
       throw new Error("ContentService requires a ContentRepository to generate content");
     }
 
-    const row = await this.contentRepo.insert({
-      nodeId: node.nodeId,
-      kind: finalPayload.kind,
-      title: generated.title,
-      difficulty: node.difficulty,
-      estMinutes: node.estMinutes,
-      payload: finalPayload,
-      source: generated.source,
-      status,
-      validation: validation as ContentValidation,
-      generatedBy: generated.source === "AI_GENERATED" ? this.provider.name : "template-engine",
-      usageCount: 1
-    });
+    // Check if there's any prior content for this concept to supersede
+    const priorContent = await this.contentRepo.getVersionHistory(node.nodeId, kind);
+
+    let row: typeof priorContent[number];
+    if (priorContent.length > 0) {
+      // Supersede the most recent version
+      const latestVersion = priorContent[0]!;
+      row = await this.contentRepo.supersede(latestVersion.id, {
+        nodeId: node.nodeId,
+        kind: finalPayload.kind,
+        title: generated.title,
+        difficulty: node.difficulty,
+        estMinutes: node.estMinutes,
+        payload: finalPayload,
+        source: generated.source,
+        status,
+        validation: validation as ContentValidation,
+        generatedBy: generated.source === "AI_GENERATED" ? this.provider.name : "template-engine",
+        usageCount: 1,
+      });
+    } else {
+      row = await this.contentRepo.insert({
+        nodeId: node.nodeId,
+        kind: finalPayload.kind,
+        title: generated.title,
+        difficulty: node.difficulty,
+        estMinutes: node.estMinutes,
+        payload: finalPayload,
+        source: generated.source,
+        status,
+        validation: validation as ContentValidation,
+        generatedBy: generated.source === "AI_GENERATED" ? this.provider.name : "template-engine",
+        usageCount: 1
+      });
+    }
 
     if (status === "DRAFT") {
       console.warn(`[content] generated ${kind} for ${node.nodeKey} failed validation: ${validation.notes.join("; ")}`);
@@ -153,7 +175,18 @@ export class ContentService {
           estMinutes: fallback.estMinutes
         };
       }
-      throw new Error(`content generation failed validation for ${kind}@${node.nodeKey}`);
+      // Return DRAFT content instead of throwing — better to serve imperfect content than none
+      return {
+        itemId: row.id,
+        title: generated.title,
+        kind: finalPayload.kind as ContentKind,
+        payload: finalPayload,
+        source: generated.source,
+        created: false,
+        usageCount: 1,
+        difficulty: node.difficulty,
+        estMinutes: node.estMinutes
+      };
     }
 
     return {
@@ -188,36 +221,38 @@ export class ContentService {
       seed: nodeSeed(node.languageKey, node.nodeKey) + usageCount * 7919
     };
 
+    const deps = { provider: this.provider };
+
     try {
       switch (kind) {
         case "LESSON": {
-          const g = await generateLesson(ctx);
+          const g = await generateLesson(ctx, deps);
           return { title: g.title, payload: g.payload, source: g.source };
         }
         case "CODING":
         case "DEBUGGING": {
-          const g = await generateExercise(ctx, kind);
+          const g = await generateExercise(ctx, kind, deps);
           return { title: g.title, payload: g.payload, source: g.source };
         }
         case "CONCEPTUAL": {
-          const g = await generateConceptual(ctx);
+          const g = await generateConceptual(ctx, deps);
           return { title: g.title, payload: g.payload, source: g.source };
         }
         case "TRACING":
         case "PREDICTION": {
-          const g = await generateTracing(ctx, kind);
+          const g = await generateTracing(ctx, kind, deps);
           return { title: g.title, payload: g.payload, source: g.source };
         }
         case "ASSESSMENT": {
-          const g = await generateAssessment(ctx);
+          const g = await generateAssessment(ctx, deps);
           return { title: g.title, payload: g.payload, source: g.source };
         }
         case "REAL_WORLD": {
-          const g = await generateRealWorld(ctx);
+          const g = await generateRealWorld(ctx, deps);
           return { title: g.title, payload: g.payload, source: g.source };
         }
         case "PROJECT": {
-          const g = await generateProject(ctx);
+          const g = await generateProject(ctx, deps);
           return { title: g.title, payload: g.payload, source: g.source };
         }
       }
@@ -230,5 +265,18 @@ export class ContentService {
 
   async countForNode(nodeId: string): Promise<number> {
     return this.contentRepo?.countForNode(nodeId) ?? 0;
+  }
+
+  /**
+   * Explicitly mark an old content item as superseded by a new one.
+   * This sets `supersededBy` on the old item and marks it as RETIRED.
+   * Use this when you need to manually retire content outside of the
+   * normal generate-and-supersede flow.
+   */
+  async markSuperseded(oldContentId: string, newContentId: string): Promise<void> {
+    if (!this.contentRepo) {
+      throw new Error("ContentService requires a ContentRepository to mark superseded");
+    }
+    await this.contentRepo.markSuperseded(oldContentId, newContentId);
   }
 }
